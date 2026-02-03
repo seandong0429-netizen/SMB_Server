@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.sean.smbserver</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <!-- 请修改为实际的 run_cli.py 绝对路径 -->
+        <string>/Users/sean/Documents/Gemini/SMB_Server/run_cli.py</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/smbserver.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/smbserver.err</string>
+</dict>
+</plist>

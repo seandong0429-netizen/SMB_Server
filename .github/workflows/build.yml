@@ -1,0 +1,37 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller impacket
+
+    - name: Build EXE
+      run: |
+        # 使用 PyInstaller 打包，包含 hidden imports
+        # --noconsole: 不显示黑框 (如果需要调试可去掉)
+        # --onefile: 单文件
+        pyinstaller --noconsole --onefile --name "SMBServer_GUI" --hidden-import=impacket.smbserver --hidden-import=impacket.ntlm --add-data "src;src" run.py
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: SMBServer_Windows_EXE
+        path: dist/SMBServer_GUI.exe
