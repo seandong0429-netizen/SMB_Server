@@ -4,6 +4,7 @@ import logging
 import platform
 import sys
 import os
+import subprocess
 
 def set_windows_startup(name, enable=True):
     """设置 Windows 开机自启 (通过注册表)"""
