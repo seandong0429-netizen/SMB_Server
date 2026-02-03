@@ -76,6 +76,17 @@ class SMBService:
         )
         self.process.start()
         
+        self.process.start()
+        
+        # 检查进程 whether immediately died (e.g. import error, bind error)
+        # Give it a moment to initialize
+        time.sleep(1)
+        if not self.process.is_alive():
+            exit_code = self.process.exitcode
+            self.logger.error(f"服务进程启动失败，立即退出 (Exit Code: {exit_code})。请检查上方日志详情。")
+            self.process = None
+            return
+
         local_ip = get_local_ip()
         hostname = get_hostname()
         self.logger.info(f"服务进程已启动 (PID: {self.process.pid})")

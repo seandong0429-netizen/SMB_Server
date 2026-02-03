@@ -239,6 +239,15 @@ def fix_port_445_environment():
         # 3. 停止服务
         for svc in ['srv2', 'srvnet', 'server']:
             subprocess.run(f"net stop {svc} /y", shell=True, capture_output=True)
+
+        # 4. 额外增强: 直接使用 SC 禁用服务 (防止注册表修改失败)
+        # 针对部分系统找不到注册表项的情况
+        try:
+            subprocess.run("sc config lanmanserver start= disabled", shell=True, capture_output=True)
+            subprocess.run("sc config srv2 start= disabled", shell=True, capture_output=True)
+            subprocess.run("sc config srvnet start= disabled", shell=True, capture_output=True)
+        except Exception:
+            pass
         
         return True, "环境修复完成 (强力模式)。\n\n已执行：\n1. 禁用 srv2, srvnet 服务\n2. 注册表禁用 SMBDevice, srv2, srvnet 驱动\n3. 停止相关服务\n\n请务必【重启电脑】以确保生效。"
 
