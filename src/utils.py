@@ -112,12 +112,38 @@ def stop_windows_server_service():
             return False, f"停止服务失败: {stop_res.stderr.strip() or stop_res.stdout.strip()}"
 
         # 检查配置结果
+        config_msg = ""
         if config_res.returncode == 0:
-            msg += "\n已设置为【手动启动】，重启依然有效。"
+            config_msg = "\n已设置为【手动启动】，重启依然有效。"
         else:
-            msg += "\n但设置为手动启动失败，重启后可能失效。"
+            config_msg = "\n但设置为手动启动失败，重启后可能失效。"
             
-        return True, msg
+        # 3. 验证端口是否真的释放
+        # 有时候服务停了，socket 还没释放，需要等一会
+        import time
+        for i in range(10): # 尝试 10 次，每次 0.5 秒
+            if not is_port_in_use(445):
+                return True, "成功停止 Server 服务，端口 445 已释放。" + config_msg
+            time.sleep(0.5)
+
+        # 如果还没释放，尝试查看是谁占用
+        kill_msg = ""
+        try:
+            # netstat -ano | findstr :445
+            netstat = subprocess.run("netstat -ano", shell=True, capture_output=True, text=True)
+            for line in netstat.stdout.splitlines():
+                if ":445 " in line and "LISTENING" in line:
+                    parts = line.strip().split()
+                    pid = parts[-1]
+                    if pid == "4":
+                        kill_msg = "\n\n端口仍被 System (PID 4) 占用，这通常是 Windows 内核驱动 (srv.sys) 未释放。\n可能需要【重启电脑】才能完全生效。"
+                    else:
+                        kill_msg = f"\n\n端口仍被 PID {pid} 占用，请手动结束该进程。"
+                    break
+        except Exception:
+            pass
+
+        return False, "服务显示已停止，但端口 445 依然被占用。" + config_msg + kill_msg
             
     except Exception as e:
         return False, f"执行命令出错: {str(e)}"
