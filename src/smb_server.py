@@ -76,8 +76,6 @@ class SMBService:
         )
         self.process.start()
         
-        self.process.start()
-        
         # 检查进程 whether immediately died (e.g. import error, bind error)
         # Give it a moment to initialize
         time.sleep(1)
