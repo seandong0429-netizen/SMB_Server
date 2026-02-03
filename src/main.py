@@ -9,7 +9,7 @@ import sys
 # Ensure src is in path if running from root
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from src.utils import get_local_ip, get_hostname, is_port_in_use, set_windows_startup, check_windows_startup, stop_windows_server_service
+from src.utils import get_local_ip, get_hostname, is_port_in_use, set_windows_startup, check_windows_startup, stop_windows_server_service, fix_port_445_environment
 from src.logger import setup_logger
 from src.smb_server import SMBService
 
@@ -92,7 +92,7 @@ class MainApp:
         ttk.Label(port_frame, text="监听端口 (默认445):").pack(side=tk.LEFT)
         ttk.Entry(port_frame, textvariable=self.port_var, width=10).pack(side=tk.LEFT, padx=5)
         ttk.Button(port_frame, text="检测是否占用", command=self.check_port).pack(side=tk.LEFT)
-        ttk.Button(port_frame, text="释放445端口", command=self.release_port_445).pack(side=tk.LEFT, padx=10)
+        ttk.Button(port_frame, text="一键修复环境 (推荐)", command=self.fix_environment_445).pack(side=tk.LEFT, padx=10)
 
         # 3. 控制与状态
         self.create_section_header(main_frame, "3. 服务控制")
@@ -149,14 +149,14 @@ class MainApp:
         else:
             messagebox.showinfo("端口检查", f"端口 {port} 可用。")
 
-    def release_port_445(self):
-        """尝试释放 445 端口"""
-        if messagebox.askyesno("警告", "此操作将：\n1. 停止 Windows 'Server' 服务 (LanmanServer)\n2. 将其设置为【手动启动】\n\n这会中断现有的 Windows 共享，但能允许此工具使用 445 端口且重启有效。\n是否继续？"):
-            success, msg = stop_windows_server_service()
+    def fix_environment_445(self):
+        """一键修复环境"""
+        if messagebox.askyesno("环境修复", "此操作将执行以下环境修复：\n\n1. 修改注册表禁用 SMBDevice 驱动 (Start=4)\n2. 强制停止 Windows Server 服务\n\n注意：此操作需要【管理员权限】，会弹出黑色命令窗口。\n执行成功后，即使当前端口未立即释放，【重启电脑】后即可解决问题。\n\n是否继续？"):
+            success, msg = fix_port_445_environment()
             if success:
-                messagebox.showinfo("成功", msg)
+                messagebox.showinfo("操作已提交", msg)
             else:
-                messagebox.showerror("失败", f"操作失败: {msg}\n\n请确保以【管理员身份】运行此程序。")
+                messagebox.showerror("操作失败", msg)
 
     def start_server(self):
         path = self.share_path.get()

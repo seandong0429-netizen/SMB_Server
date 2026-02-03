@@ -147,3 +147,101 @@ def stop_windows_server_service():
             
     except Exception as e:
         return False, f"执行命令出错: {str(e)}"
+
+def fix_port_445_environment():
+    """
+    一键修复环境 (增强版)：
+    1. 禁用服务/驱动: srv2, srvnet, server (LanmanServer), SMBDevice
+    2. 设置注册表 Start=4 (禁用)
+    3. 停止相关服务
+    4. 如果没有管理员权限，自动申请提权
+    """
+    if platform.system() != 'Windows':
+        return False, "非 Windows 系统"
+
+    import ctypes
+    
+    def is_admin():
+        try:
+            return ctypes.windll.shell32.IsUserAnAdmin()
+        except:
+            return False
+
+    # 目标服务列表
+    services = ['srv2', 'srvnet', 'LanmanServer'] # LanmanServer is 'server'
+    # 注册表项列表
+    reg_keys = ['SMBDevice', 'srv2', 'srvnet']
+
+    # 如果不是管理员，构造 CMD 命令提权执行
+    if not is_admin():
+        commands = [
+            'echo 正在尝试强力修复 445 端口环境，请勿关闭窗口...',
+            'echo 正在禁用系统 SMB 驱动和服务...'
+        ]
+        
+        # 1. SC Config Disabled
+        # 注意: sc config <service> start= disabled (注意空格)
+        for svc in ['srv2', 'srvnet']:
+             commands.append(f'sc config {svc} start= disabled')
+        
+        # 2. Registry Start=4
+        for key in reg_keys:
+            commands.append(f'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\{key}" /v Start /t REG_DWORD /d 4 /f')
+            
+        # 3. Net Stop
+        # 顺序很重要，先停依赖项
+        for svc in ['srv2', 'srvnet', 'server']:
+            commands.append(f'net stop {svc} /y')
+
+        commands.append('echo.')
+        commands.append('echo ---------------------------------------')
+        commands.append('echo 修复命令已发送。')
+        commands.append('echo 如果显示成功，请务必手动重启电脑！')
+        commands.append('echo ---------------------------------------')
+        commands.append('pause')
+
+        cmd_str = ' && '.join(commands)
+        
+        try:
+            ret = ctypes.windll.shell32.ShellExecuteW(None, "runas", "cmd.exe", f"/c {cmd_str}", None, 1)
+            if ret > 32:
+                return True, "已尝试申请管理员权限执行强力修复。\n\n请在弹出的黑色窗口中查看执行结果。\n关键步骤：SC禁用服务、注册表禁用驱动、停止服务。\n\n如果有任何成功提示，请务必【重启电脑】。"
+            else:
+                return False, "申请管理员权限失败，用户可能取消了操作。"
+        except Exception as e:
+            return False, f"提权执行失败: {str(e)}"
+
+    # 管理员模式逻辑 (Python 直接执行)
+    try:
+        import winreg
+        import subprocess
+        
+        # 1. 修改注册表
+        for service_name in reg_keys:
+            try:
+                try:
+                    key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                                        f"SYSTEM\\CurrentControlSet\\Services\\{service_name}", 
+                                        0, winreg.KEY_SET_VALUE)
+                except FileNotFoundError:
+                    # 尝试创建
+                    key = winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, f"SYSTEM\\CurrentControlSet\\Services\\{service_name}")
+                
+                winreg.SetValueEx(key, "Start", 0, winreg.REG_DWORD, 4)
+                winreg.CloseKey(key)
+            except Exception as e:
+                print(f"设置注册表 {service_name} 失败: {e}")
+
+        # 2. SC Config Disabled
+        for svc in ['srv2', 'srvnet']:
+            subprocess.run(f"sc config {svc} start= disabled", shell=True, capture_output=True)
+
+        # 3. 停止服务
+        for svc in ['srv2', 'srvnet', 'server']:
+            subprocess.run(f"net stop {svc} /y", shell=True, capture_output=True)
+        
+        return True, "环境修复完成 (强力模式)。\n\n已执行：\n1. 禁用 srv2, srvnet 服务\n2. 注册表禁用 SMBDevice, srv2, srvnet 驱动\n3. 停止相关服务\n\n请务必【重启电脑】以确保生效。"
+
+    except Exception as e:
+        return False, f"执行修复操作失败: {str(e)}"
+
