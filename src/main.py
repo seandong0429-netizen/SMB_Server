@@ -9,7 +9,7 @@ import sys
 # Ensure src is in path if running from root
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from src.utils import get_local_ip, get_hostname, is_port_in_use, set_windows_startup, check_windows_startup
+from src.utils import get_local_ip, get_hostname, is_port_in_use, set_windows_startup, check_windows_startup, stop_windows_server_service
 from src.logger import setup_logger
 from src.smb_server import SMBService
 
@@ -92,6 +92,7 @@ class MainApp:
         ttk.Label(port_frame, text="监听端口 (默认445):").pack(side=tk.LEFT)
         ttk.Entry(port_frame, textvariable=self.port_var, width=10).pack(side=tk.LEFT, padx=5)
         ttk.Button(port_frame, text="检测是否占用", command=self.check_port).pack(side=tk.LEFT)
+        ttk.Button(port_frame, text="释放445端口", command=self.release_port_445).pack(side=tk.LEFT, padx=10)
 
         # 3. 控制与状态
         self.create_section_header(main_frame, "3. 服务控制")
@@ -147,6 +148,15 @@ class MainApp:
             messagebox.showwarning("端口冲突", f"端口 {port} 已被占用！\n建议使用 4445 或其他端口。")
         else:
             messagebox.showinfo("端口检查", f"端口 {port} 可用。")
+
+    def release_port_445(self):
+        """尝试释放 445 端口"""
+        if messagebox.askyesno("警告", "此操作将：\n1. 停止 Windows 'Server' 服务 (LanmanServer)\n2. 将其设置为【手动启动】\n\n这会中断现有的 Windows 共享，但能允许此工具使用 445 端口且重启有效。\n是否继续？"):
+            success, msg = stop_windows_server_service()
+            if success:
+                messagebox.showinfo("成功", msg)
+            else:
+                messagebox.showerror("失败", f"操作失败: {msg}\n\n请确保以【管理员身份】运行此程序。")
 
     def start_server(self):
         path = self.share_path.get()

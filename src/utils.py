@@ -85,3 +85,39 @@ def is_port_in_use(port):
     """检查端口是否被占用"""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex(('localhost', port)) == 0
+
+def stop_windows_server_service():
+    """停止 Windows Server 服务 (释放 445 端口)"""
+    if platform.system() != 'Windows':
+        return False, "非 Windows 系统"
+
+    import subprocess
+    
+    try:
+        # 1. 停止服务: net stop LanmanServer /y
+        stop_cmd = "net stop LanmanServer /y"
+        stop_res = subprocess.run(stop_cmd, shell=True, capture_output=True, text=True)
+        
+        # 2. 设置为手动启动: sc config LanmanServer start= demand
+        # 这样重启后它就不会自动抢占端口
+        config_cmd = "sc config LanmanServer start= demand"
+        config_res = subprocess.run(config_cmd, shell=True, capture_output=True, text=True)
+        
+        # 检查停止结果
+        if stop_res.returncode == 0:
+            msg = "成功停止 Server 服务。"
+        elif "The service is not started" in stop_res.stderr or "服务没有启动" in stop_res.stderr:
+            msg = "服务本来就未启动。"
+        else:
+            return False, f"停止服务失败: {stop_res.stderr.strip() or stop_res.stdout.strip()}"
+
+        # 检查配置结果
+        if config_res.returncode == 0:
+            msg += "\n已设置为【手动启动】，重启依然有效。"
+        else:
+            msg += "\n但设置为手动启动失败，重启后可能失效。"
+            
+        return True, msg
+            
+    except Exception as e:
+        return False, f"执行命令出错: {str(e)}"
