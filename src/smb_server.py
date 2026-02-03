@@ -1,10 +1,44 @@
 
-import threading
+import multiprocessing
 import logging
 import time
+import sys
 from impacket import smbserver
 from impacket.ntlm import compute_lmhash, compute_nthash
 from src.utils import get_local_ip, get_hostname, is_port_in_use
+
+# 独立的进程函数，避免 Pickling 问题
+def run_smb_server_process(share_name, share_path, username, password, port):
+    """在独立进程中运行 SMB 服务"""
+    # 在子进程中重新配置日志（可选，或者直接打印到 stdout）
+    # 这里简单起见，不配置复杂日志，impacket 默认会打印到 console
+    
+    try:
+        # 初始化 SimpleSMBServer
+        server = smbserver.SimpleSMBServer(listenAddress='0.0.0.0', listenPort=port)
+        
+        # 添加共享文件夹
+        server.addShare(share_name, share_path, shareComment='SMB Share')
+        
+        # 设置权限
+        if username and password:
+            lmhash = compute_lmhash(password)
+            nthash = compute_nthash(password)
+            server.addCredential(username, 0, lmhash, nthash)
+            server.setSMB2Support(True)
+            server.setSMBChallenge('')
+        else:
+            server.setSMB2Support(True)
+            server.setSMBChallenge('')
+            server.setSMB2Support(True)
+
+        # 启动服务
+        server.start()
+        
+    except Exception as e:
+        # 子进程中的错误最好能通过管道传回，或者打印
+        print(f"[SMB Process] Error: {str(e)}")
+        sys.exit(1)
 
 class SMBService:
     def __init__(self, share_name, share_path, username=None, password=None, port=445):
@@ -12,99 +46,56 @@ class SMBService:
         self.share_path = share_path
         self.username = username
         self.password = password
-        self.port = port
-        self.server = None
-        self.thread = None
-        self.is_running = False
+        self.val_port = port # Rename to avoid conflict if any
+        self.process = None
         self.logger = logging.getLogger('SMBServer')
 
     def start(self):
-        """启动 SMB 服务"""
-        if self.is_running:
+        """启动 SMB 服务进程"""
+        if self.process and self.process.is_alive():
             self.logger.warning("服务已经在运行中")
             return
 
-        try:
-            # 初始化 SimpleSMBServer
-            # listenAddress='0.0.0.0' allowing access from other machines
-            self.server = smbserver.SimpleSMBServer(listenAddress='0.0.0.0', listenPort=self.port)
-            
-            # 添加共享文件夹
-            self.server.addShare(self.share_name, self.share_path, shareComment='SMB Share')
-            
-            # 设置权限
-            if self.username and self.password:
-                lmhash = compute_lmhash(self.password)
-                nthash = compute_nthash(self.password)
-                self.server.addCredential(self.username, 0, lmhash, nthash)
-                self.server.setSMB2Support(True)
-                self.server.setSMBChallenge('')
-                # Note: For real security we might want more complex setup, but this matches "User Mode" requirement
-                self.logger.info(f"启用安全模式: 用户名={self.username}")
-            else:
-                self.server.setSMB2Support(True)
-                self.server.setSMBChallenge('')
-                # Anonymous login is handled by default if no credentials required? 
-                # Actually impacket SimpleSMBServer allows guest by default if no credentials added?
-                # Let's verify: SimpleSMBServer usually allows everything unless config calls for auth.
-                # However, setSMB2Support(True) is good for modern compatibility.
-                self.logger.info("启用匿名访问模式")
-
-            # 在独立线程中启动
-            self.thread = threading.Thread(target=self._run_server, daemon=True)
-            self.thread.start()
-            self.is_running = True
-            
-            local_ip = get_local_ip()
-            hostname = get_hostname()
-            self.logger.info(f"服务已启动")
-            self.logger.info(f"主机名: {hostname}")
-            self.logger.info(f"监听地址: {local_ip}:{self.port}")
-            self.logger.info(f"共享路径: {self.share_name} -> {self.share_path}")
-
-        except Exception as e:
-            self.logger.error(f"启动失败: {str(e)}")
-            self.is_running = False
-
-    def _run_server(self):
-        """内部运行循环"""
-        try:
-            self.server.start()
-        except Exception as e:
-            self.logger.error(f"服务运行时发生错误: {str(e)}")
-            self.is_running = False
+        self.logger.info(f"正在启动服务进程 (端口 {self.val_port})...")
+        
+        # 使用 multiprocessing 启动
+        # 注意 args 必须是 picklable 的
+        self.process = multiprocessing.Process(
+            target=run_smb_server_process,
+            args=(self.share_name, self.share_path, self.username, self.password, self.val_port),
+            daemon=True
+        )
+        self.process.start()
+        
+        local_ip = get_local_ip()
+        hostname = get_hostname()
+        self.logger.info(f"服务进程已启动 (PID: {self.process.pid})")
+        self.logger.info(f"主机名: {hostname}")
+        self.logger.info(f"监听地址: {local_ip}:{self.val_port}")
+        self.logger.info(f"共享路径: {self.share_name} -> {self.share_path}")
 
     def stop(self):
         """停止服务"""
-        if not self.is_running or not self.server:
+        if not self.process:
             return
 
-        self.logger.info("正在停止服务...")
-        # impacket 没有优雅的 stop 方法，通常只能强制关闭 socket 或允许线程结束
-        # Check if server has stop method? SimpleSMBServer doesn't directly expose user-friendly stop
-        # But we can try to close the socket or just rely on daemon thread being killed when main app closes?
-        # Ideally we want to be able to restart it.
+        self.logger.info("正在停止服务进程...")
         
-        # Taking a crude approach: The main difficulty with Impacket SimpleSMBServer is it runs a blocking loop.
-        # We might need to modify or access internal socket to close it.
-        # For now, let's assume we can just 'abandon' the object if we can't kill it clearly, 
-        # but port reuse will be an issue if socket isn't closed.
-        
-        # Hack to stop impacket: close the socket.
-        try:
-            # stop() might not exist on SimpleSMBServer (wrapper), let's check internal
-            # It relies on smbserver.SMBSERVER which relies on structure.Structure...
-            # The start() method calls smbServer.start() which does a select loop or similar.
-            pass
-            # Warning: Stopping impacket in a clean way is tricky.
-            # We will rely on user closing the app to fully release port for now,
-            # Or implement a forcefully kill mechanism if needed.
-            # But wait, looking at impacket source (if I could), usually one just stops the loop.
-        except Exception as e:
-            self.logger.error(f"停止服务时出错: {str(e)}")
-
-        self.is_running = False
-        self.logger.info("服务已停止")
+        if self.process.is_alive():
+            # 强制终止进程 - 这是使用 multiprocessing 的主要优势
+            # 可以立即释放端口，不需要等待 socket 超时
+            self.process.terminate()
+            self.process.join(timeout=2) # 等待进程结束
+            
+            if self.process.is_alive():
+                 self.logger.warning("进程未响应，正在强制 Kill...")
+                 self.process.kill() # 更加暴力的 Kill
+            
+            self.logger.info("服务进程已终止")
+        else:
+            self.logger.info("服务进程此前已结束")
+            
+        self.process = None
 
     def check_port_conflict(self, preferred_port=445, fallback_port=4445):
         """检查端口冲突并返回可用端口"""
@@ -117,3 +108,4 @@ class SMBService:
         
         self.logger.error(f"端口 {preferred_port} 和 {fallback_port} 均被占用")
         return None
+

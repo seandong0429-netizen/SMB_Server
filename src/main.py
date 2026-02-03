@@ -9,7 +9,12 @@ import sys
 # Ensure src is in path if running from root
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from src.utils import get_local_ip, get_hostname, is_port_in_use, set_windows_startup, check_windows_startup, stop_windows_server_service, fix_port_445_environment
+
+from src.utils import get_local_ip, get_hostname, is_port_in_use, set_windows_startup, check_windows_startup, stop_windows_server_service, fix_port_445_environment, manage_firewall_rule
+
+# ... imports ...
+
+
 from src.logger import setup_logger
 from src.smb_server import SMBService
 
@@ -191,6 +196,9 @@ class MainApp:
         user = self.username.get() if self.auth_mode.get() == "secure" else None
         pwd = self.password.get() if self.auth_mode.get() == "secure" else None
         
+        # 添加防火墙规则
+        manage_firewall_rule('add', port)
+        
         self.service = SMBService(name, path, user, pwd, port)
         self.service.start()
         
@@ -201,8 +209,14 @@ class MainApp:
 
     def stop_server(self):
         if self.service:
+            # 停止前获取端口移除防火墙规则
+            # 注意: 这里假设用户在运行期间没有改端口号输入框
+            port = self.service.val_port
             self.service.stop()
             self.service = None
+            
+            # 移除防火墙规则
+            manage_firewall_rule('delete', port)
             
         self.start_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.DISABLED)

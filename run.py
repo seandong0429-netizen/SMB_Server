@@ -8,7 +8,10 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from src.main import MainApp
 import tkinter as tk
 
+import multiprocessing
+
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     root = tk.Tk()
     app = MainApp(root)
     root.mainloop()

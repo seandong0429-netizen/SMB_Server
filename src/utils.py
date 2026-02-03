@@ -242,6 +242,35 @@ def fix_port_445_environment():
         
         return True, "环境修复完成 (强力模式)。\n\n已执行：\n1. 禁用 srv2, srvnet 服务\n2. 注册表禁用 SMBDevice, srv2, srvnet 驱动\n3. 停止相关服务\n\n请务必【重启电脑】以确保生效。"
 
+        return True, "环境修复完成 (强力模式)。\n\n已执行：\n1. 禁用 srv2, srvnet 服务\n2. 注册表禁用 SMBDevice, srv2, srvnet 驱动\n3. 停止相关服务\n\n请务必【重启电脑】以确保生效。"
+
     except Exception as e:
         return False, f"执行修复操作失败: {str(e)}"
+
+def manage_firewall_rule(action, port=445):
+    """
+    管理 Windows 防火墙规则
+    action: 'add' or 'delete'
+    port: 端口号
+    """
+    if platform.system() != 'Windows':
+        return
+        
+    rule_name = f"PythonSMBServer_Port{port}"
+    
+    if action == 'add':
+        # 先尝试删除旧规则，避免重复
+        subprocess.run(f'netsh advfirewall firewall delete rule name="{rule_name}"', shell=True, capture_output=True)
+        # 添加新规则
+        cmd = f'netsh advfirewall firewall add rule name="{rule_name}" dir=in action=allow protocol=TCP localport={port}'
+        res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        if res.returncode != 0:
+            logging.error(f"添加防火墙规则失败: {res.stderr}")
+        else:
+            logging.info(f"已添加防火墙规则: {rule_name}")
+            
+    elif action == 'delete':
+        cmd = f'netsh advfirewall firewall delete rule name="{rule_name}"'
+        subprocess.run(cmd, shell=True, capture_output=True)
+        logging.info(f"已移除防火墙规则: {rule_name}")
 
