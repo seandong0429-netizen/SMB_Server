@@ -4,11 +4,6 @@ import logging
 import time
 import sys
 import os
-from impacket import smbserver
-from impacket.ntlm import compute_lmhash, compute_nthash
-from src.utils import get_local_ip, get_hostname, is_port_in_use
-from src.logger import QueueHandler # Need to import this class
-
 # 独立的进程函数，避免 Pickling 问题
 def run_smb_server_process(share_name, share_path, username, password, port, log_queue):
     """在独立进程中运行 SMB 服务"""
@@ -21,6 +16,11 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
     try:
         logger.info(f"正在初始化 SMB 服务 (PID: {os.getpid()})...")
         
+        # 延迟导入 impacket，以便捕获 ImportError
+        # 在打包环境中，如果缺少 hidden import，这里会抛出异常，现在可以被 log 捕获了
+        from impacket import smbserver
+        from impacket.ntlm import compute_lmhash, compute_nthash
+
         # 初始化 SimpleSMBServer
         server = smbserver.SimpleSMBServer(listenAddress='0.0.0.0', listenPort=port)
         
