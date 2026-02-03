@@ -1,8 +1,10 @@
 
+
 import tkinter as tk
 from tkinter import ttk, filedialog, scrolledtext, messagebox
 import queue
 import threading
+import multiprocessing
 import os
 import sys
 
@@ -34,8 +36,8 @@ class MainApp:
         self.is_running = False
         self.service = None
         
-        # 日志队列
-        self.log_queue = queue.Queue()
+        # 日志队列 - 使用 multiprocessing.Queue 以支持跨进程日志
+        self.log_queue = multiprocessing.Queue()
         self.logger = setup_logger(self.log_queue)
         
         self.create_widgets()
@@ -123,6 +125,7 @@ class MainApp:
         self.log_area = scrolledtext.ScrolledText(main_frame, height=15, state='disabled', font=('Courier', 9))
         self.log_area.pack(fill=tk.BOTH, expand=True, pady=5)
         
+
         # 底部提示
         local_ip = get_local_ip()
         hostname = get_hostname()
@@ -199,13 +202,15 @@ class MainApp:
         # 添加防火墙规则
         manage_firewall_rule('add', port)
         
-        self.service = SMBService(name, path, user, pwd, port)
+        # Pass log_queue to service for child process logging
+        self.service = SMBService(name, path, user, pwd, port, self.log_queue)
         self.service.start()
         
         self.start_btn.config(state=tk.DISABLED)
         self.stop_btn.config(state=tk.NORMAL)
         self.status_label.config(text=f"状态: 运行中 (端口 {port})", foreground="green")
         self.is_running = True
+
 
     def stop_server(self):
         if self.service:

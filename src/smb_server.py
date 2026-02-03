@@ -3,17 +3,24 @@ import multiprocessing
 import logging
 import time
 import sys
+import os
 from impacket import smbserver
 from impacket.ntlm import compute_lmhash, compute_nthash
 from src.utils import get_local_ip, get_hostname, is_port_in_use
+from src.logger import QueueHandler # Need to import this class
 
 # 独立的进程函数，避免 Pickling 问题
-def run_smb_server_process(share_name, share_path, username, password, port):
+def run_smb_server_process(share_name, share_path, username, password, port, log_queue):
     """在独立进程中运行 SMB 服务"""
-    # 在子进程中重新配置日志（可选，或者直接打印到 stdout）
-    # 这里简单起见，不配置复杂日志，impacket 默认会打印到 console
+    
+    # 配置子进程日志
+    logger = logging.getLogger('SMBServer')
+    logger.setLevel(logging.INFO)
+    logger.addHandler(QueueHandler(log_queue))
     
     try:
+        logger.info(f"正在初始化 SMB 服务 (PID: {os.getpid()})...")
+        
         # 初始化 SimpleSMBServer
         server = smbserver.SimpleSMBServer(listenAddress='0.0.0.0', listenPort=port)
         
@@ -32,21 +39,24 @@ def run_smb_server_process(share_name, share_path, username, password, port):
             server.setSMBChallenge('')
             server.setSMB2Support(True)
 
+        logger.info("SMB 服务准备就绪，开始监听...")
         # 启动服务
         server.start()
         
     except Exception as e:
-        # 子进程中的错误最好能通过管道传回，或者打印
-        print(f"[SMB Process] Error: {str(e)}")
+        logger.error(f"子进程发生严重错误: {str(e)}")
+        # 同时打印到 stderr 以便调试
+        print(f"[SMB Process Error] {str(e)}", file=sys.stderr)
         sys.exit(1)
 
 class SMBService:
-    def __init__(self, share_name, share_path, username=None, password=None, port=445):
+    def __init__(self, share_name, share_path, username=None, password=None, port=445, log_queue=None):
         self.share_name = share_name
         self.share_path = share_path
         self.username = username
         self.password = password
-        self.val_port = port # Rename to avoid conflict if any
+        self.val_port = port 
+        self.log_queue = log_queue
         self.process = None
         self.logger = logging.getLogger('SMBServer')
 
@@ -59,10 +69,9 @@ class SMBService:
         self.logger.info(f"正在启动服务进程 (端口 {self.val_port})...")
         
         # 使用 multiprocessing 启动
-        # 注意 args 必须是 picklable 的
         self.process = multiprocessing.Process(
             target=run_smb_server_process,
-            args=(self.share_name, self.share_path, self.username, self.password, self.val_port),
+            args=(self.share_name, self.share_path, self.username, self.password, self.val_port, self.log_queue),
             daemon=True
         )
         self.process.start()
