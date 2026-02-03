@@ -23,15 +23,22 @@ jobs:
         python -m pip install --upgrade pip
         pip install pyinstaller impacket
 
+    - name: Get Version
+      id: get_version
+      shell: bash
+      run: |
+        VERSION=$(python -c "from src.version import VERSION; print(VERSION)")
+        echo "VERSION=$VERSION" >> $GITHUB_ENV
+
     - name: Build EXE
       run: |
         # 使用 PyInstaller 打包，包含 hidden imports
         # --noconsole: 不显示黑框 (如果需要调试可去掉)
         # --onefile: 单文件
-        pyinstaller --onefile --windowed --name "SMBServer_GUI" --hidden-import=impacket.smbserver --hidden-import=impacket.ntlm --add-data "src;src" run.py
+        pyinstaller --onefile --windowed --name "SMBServer_GUI_v${{ env.VERSION }}" --hidden-import=impacket.smbserver --hidden-import=impacket.ntlm --add-data "src;src" run.py
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: SMBServer_Windows_EXE
-        path: dist/SMBServer_GUI.exe
+        name: SMBServer_Windows_EXE_v${{ env.VERSION }}
+        path: dist/SMBServer_GUI_v${{ env.VERSION }}.exe

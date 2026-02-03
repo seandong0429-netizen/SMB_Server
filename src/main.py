@@ -17,13 +17,15 @@ from src.utils import get_local_ip, get_hostname, is_port_in_use, set_windows_st
 # ... imports ...
 
 
+
 from src.logger import setup_logger
 from src.smb_server import SMBService
+from src.version import VERSION
 
 class MainApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("独立 SMB 服务端 (Windows/Mac)")
+        self.root.title(f"独立 SMB 服务端 (Windows/Mac) v{VERSION}")
         self.root.geometry("600x750")
         
         # 状态变量
