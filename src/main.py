@@ -167,49 +167,58 @@ class MainApp:
                 messagebox.showerror("操作失败", msg)
 
     def start_server(self):
-        path = self.share_path.get()
-        name = self.share_name.get()
-        port = self.port_var.get()
-        
-        if not path or not os.path.exists(path):
-            messagebox.showerror("错误", "请选择有效的共享目录")
-            return
+        try:
+            self.logger.info("正在尝试启动服务...")
             
-        if not name:
-            messagebox.showerror("错误", "请设置共享名称")
-            return
+            path = self.share_path.get()
+            name = self.share_name.get()
+            port = self.port_var.get()
             
-        # 检查端口占用
-        if is_port_in_use(port):
-             # 尝试自动切换逻辑或询问用户
-             # 这里简单起见，如果用户手动填了端口还冲突，就报错。如果是默认445冲突，尝试切换。
-             if port == 445:
-                 if messagebox.askyesno("端口冲突", "端口 445 被占用，是否尝试使用端口 4445？"):
-                     port = 4445
-                     self.port_var.set(port)
-                     if is_port_in_use(port):
-                         messagebox.showerror("错误", f"端口 {port} 也被占用，请手动指定其他端口。")
+            if not path or not os.path.exists(path):
+                messagebox.showerror("错误", "请选择有效的共享目录")
+                return
+                
+            if not name:
+                messagebox.showerror("错误", "请设置共享名称")
+                return
+                
+            # 检查端口占用
+            if is_port_in_use(port):
+                 # 尝试自动切换逻辑或询问用户
+                 # 这里简单起见，如果用户手动填了端口还冲突，就报错。如果是默认445冲突，尝试切换。
+                 if port == 445:
+                     if messagebox.askyesno("端口冲突", "端口 445 被占用，是否尝试使用端口 4445？"):
+                         port = 4445
+                         self.port_var.set(port)
+                         if is_port_in_use(port):
+                             messagebox.showerror("错误", f"端口 {port} 也被占用，请手动指定其他端口。")
+                             return
+                     else:
                          return
                  else:
+                     messagebox.showerror("错误", f"端口 {port} 被占用。")
                      return
-             else:
-                 messagebox.showerror("错误", f"端口 {port} 被占用。")
-                 return
 
-        user = self.username.get() if self.auth_mode.get() == "secure" else None
-        pwd = self.password.get() if self.auth_mode.get() == "secure" else None
-        
-        # 添加防火墙规则
-        manage_firewall_rule('add', port)
-        
-        # Pass log_queue to service for child process logging
-        self.service = SMBService(name, path, user, pwd, port, self.log_queue)
-        self.service.start()
-        
-        self.start_btn.config(state=tk.DISABLED)
-        self.stop_btn.config(state=tk.NORMAL)
-        self.status_label.config(text=f"状态: 运行中 (端口 {port})", foreground="green")
-        self.is_running = True
+            user = self.username.get() if self.auth_mode.get() == "secure" else None
+            pwd = self.password.get() if self.auth_mode.get() == "secure" else None
+            
+            # 添加防火墙规则
+            manage_firewall_rule('add', port)
+            
+            # Pass log_queue to service for child process logging
+            self.service = SMBService(name, path, user, pwd, port, self.log_queue)
+            self.service.start()
+            
+            self.start_btn.config(state=tk.DISABLED)
+            self.stop_btn.config(state=tk.NORMAL)
+            self.status_label.config(text=f"状态: 运行中 (端口 {port})", foreground="green")
+            self.is_running = True
+            
+        except Exception as e:
+            import traceback
+            err_msg = f"启动服务时发生严重错误:\n{str(e)}\n\n{traceback.format_exc()}"
+            self.logger.error(err_msg)
+            messagebox.showerror("启动失败", err_msg)
 
 
     def stop_server(self):
