@@ -196,10 +196,42 @@ def fix_port_445_environment():
         for svc in ['srv2', 'srvnet', 'server']:
             commands.append(f'net stop {svc} /y')
 
+        # 4. [v1.17] 启动关键依赖服务 (WSD, NetBIOS)
+        # 必须先启动 SSDPSRV (SSDP Discovery) 才能启动 FDResPub
+        for svc in ['SSDPSRV', 'FDResPub', 'lmhosts']:
+            commands.append(f'sc config {svc} start= auto')
+            commands.append(f'net start {svc} /y')
+
+        # 5. [v1.17] 注册表优化与 Hosts修复 
+        # (由于 CMD 写入 Hosts 较复杂，这里主要保证注册表和缓存清理)
+        commands.append('reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanServer\\Parameters" /v DisableStrictNameChecking /t REG_DWORD /d 1 /f')
+        commands.append('reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa" /v DisableLoopbackCheck /t REG_DWORD /d 1 /f')
+        commands.append('reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters" /v AllowInsecureGuestAuth /t REG_DWORD /d 1 /f')
+        commands.append('nbtstat -RR')
+        commands.append('ipconfig /flushdns')
+
+        # Hosts 文件修改比较困难仅靠 CMD 一行命令 (涉及换行符)，
+        # 我们仍依赖 Python 部分在提权失败时尝试，或者用户手动运行。
+        # 但既然已经提权，Python 后续的 try...except 逻辑其实不会执行到(因为 ShellExecuteW 返回后 current process 还是非 admin)
+        # 等等，当前的逻辑是: if not is_admin -> ShellExecuteW -> return
+        # 所以 Python 的后续逻辑根本不会跑！这是一个巨大的设计漏洞。
+        # 我们必须让 Python 逻辑在提权后也能跑，但这不可能 (那是另一个进程)。
+        # 所以必须把所有逻辑都塞进 commands，或者让 Python 重新以 admin 启动自己? 
+        # 简单方案: 尽可能在 CMD 里做完。
+        # Hosts 文件追加一行: echo 127.... >> ... 
+        
+        import socket
+        hn = socket.gethostname()
+        hosts_f = r"C:\Windows\System32\drivers\etc\hosts"
+        # 注意: echo 在 cmd 中处理换行很微妙。
+        # 尝试追加
+        commands.append(f'echo.>>"{hosts_f}"') # 确保新行
+        commands.append(f'echo 127.0.0.1 {hn} # Auto-added>>"{hosts_f}"')
+
         commands.append('echo.')
         commands.append('echo ---------------------------------------')
         commands.append('echo 修复命令已发送。')
-        commands.append('echo 如果显示成功，请务必手动重启电脑！')
+        commands.append('echo 必须重启电脑！')
         commands.append('echo ---------------------------------------')
         commands.append('pause')
 
@@ -260,6 +292,10 @@ def fix_port_445_environment():
             # 这对计算机名解析至关重要
             subprocess.run("sc config lmhosts start= auto", shell=True, capture_output=True)
             subprocess.run("net start lmhosts /y", shell=True, capture_output=True)
+
+            # [v1.17] 强制开启依赖服务 SSDPSRV (SSDP Discovery)
+            subprocess.run("sc config SSDPSRV start= auto", shell=True, capture_output=True)
+            subprocess.run("net start SSDPSRV /y", shell=True, capture_output=True)
 
             # [v1.12] 强制开启 FDResPub (Function Discovery Resource Publication)
             # 这让电脑能在"网络"邻居里被发现 (WSD协议)
