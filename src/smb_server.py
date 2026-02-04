@@ -4,6 +4,9 @@ import logging
 import time
 import sys
 import os
+from src.utils import get_local_ip, get_hostname
+from src.logger import QueueHandler
+
 # 独立的进程函数，避免 Pickling 问题
 def run_smb_server_process(share_name, share_path, username, password, port, log_queue):
     """在独立进程中运行 SMB 服务"""
@@ -46,7 +49,11 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
     except Exception as e:
         logger.error(f"子进程发生严重错误: {str(e)}")
         # 同时打印到 stderr 以便调试
-        print(f"[SMB Process Error] {str(e)}", file=sys.stderr)
+        if sys.stderr:
+            try:
+                print(f"[SMB Process Error] {str(e)}", file=sys.stderr)
+            except Exception:
+                pass
         sys.exit(1)
 
 class SMBService:
