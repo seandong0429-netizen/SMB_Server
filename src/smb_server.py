@@ -23,6 +23,40 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
         # 在打包环境中，如果缺少 hidden import，这里会抛出异常，现在可以被 log 捕获了
         from impacket import smbserver
         from impacket.ntlm import compute_lmhash, compute_nthash
+        import signal
+
+        # 自定义 SMB Server 类以开启端口重用
+        class CustomSMBServer(smbserver.SimpleSMBServer):
+            def __init__(self, listenAddress='0.0.0.0', listenPort=445):
+                # 必须在初始化父类之前设置 allow_reuse_address
+                # 但 SimpleSMBServer 内部创建 SocketServer，且没有直接暴露 allow_reuse_address
+                # 需要 Monkey Patch 或者继承其父类。
+                # SimpleSMBServer 继承自 structure.Structure? 不，它是 helper
+                # 实际上 SimpleSMBServer 是一个封装类。
+                # 正确的做法是：直接修改 SimpleSMBServer 实例的属性可能来不及（socket 已创建）
+                # impacket 的 SimpleSMBServer 在 __init__ 时就已经创建 socket 了。
+                # 我们需要 override 它的 __init__ 或者更加底层的 tcpserver。
+                # 简化方案: 直接在 smbserver 模块级别打补丁，或者...
+                # Impacket 的 SimpleSMBServer 使用 smbserver.SMBSERVER (which uses SocketServer.ThreadingTCPServer)
+                pass
+        
+        # 更好的方法：我们在创建 SimpleSMBServer 之前，Hack socketserver
+        import socketserver
+        socketserver.TCPServer.allow_reuse_address = True
+
+        # 定义优雅关闭的信号处理
+        def signal_handler(signum, frame):
+            logger.info(f"接收到终止信号 ({signum})，正在关闭 SMB 服务...")
+            # 由于 server.start() 是阻塞的，我们需要在另一个线程或回调中关闭
+            # 但在这里，我们可以抛出异常或者调用 server 停止方法 如果 server 是全局的
+            # 这是一个难点。SimpleSMBServer.start() 是死循环。
+            # 我们通过 sys.exit() ? 不，这会导致 finally 块执行
+            sys.exit(0)
+
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+
+        logger.info("已开启端口重用 (allow_reuse_address=True)")
 
         # 初始化 SimpleSMBServer
         server = smbserver.SimpleSMBServer(listenAddress='0.0.0.0', listenPort=port)
@@ -43,9 +77,20 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
             server.setSMB2Support(True)
 
         logger.info("SMB 服务准备就绪，开始监听...")
+        
         # 启动服务
         server.start()
         
+    except SystemExit:
+        logger.info("SMB 服务子进程正在退出...")
+        # 尝试清理资源 (SimpleSMBServer 没有 close 方法 exposed easily, 但 socket 会被系统回收)
+        try:
+             # 如果能访问到 server._SMBServer__server (ThreadingTCPServer)
+             if 'server' in locals():
+                 server._SMBServer__server.server_close()
+                 logger.info("Socket 资源已主动释放")
+        except:
+             pass
     except Exception as e:
         logger.error(f"子进程发生严重错误: {str(e)}")
         # 同时打印到 stderr 以便调试
@@ -116,6 +161,8 @@ class SMBService:
                  self.logger.warning("进程未响应，正在强制 Kill...")
                  self.process.kill() # 更加暴力的 Kill
             
+            # 再次确保完全回收
+            self.process.join(timeout=1)
             self.logger.info("服务进程已终止")
         else:
             self.logger.info("服务进程此前已结束")

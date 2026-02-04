@@ -247,6 +247,9 @@ def fix_port_445_environment():
             subprocess.run("sc config lanmanserver start= disabled", shell=True, capture_output=True)
             subprocess.run("sc config srv2 start= disabled", shell=True, capture_output=True)
             subprocess.run("sc config srvnet start= disabled", shell=True, capture_output=True)
+            # 5. 清理 NetBIOS 缓存 (解决部分占用的玄学问题)
+            subprocess.run("nbtstat -R", shell=True, capture_output=True)
+            subprocess.run("nbtstat -RR", shell=True, capture_output=True)
         except Exception:
             pass
         
@@ -271,16 +274,30 @@ def manage_firewall_rule(action, port=445):
     if action == 'add':
         # 先尝试删除旧规则，避免重复
         subprocess.run(f'netsh advfirewall firewall delete rule name="{rule_name}"', shell=True, capture_output=True)
-        # 添加新规则
-        cmd = f'netsh advfirewall firewall add rule name="{rule_name}" dir=in action=allow protocol=TCP localport={port}'
-        res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-        if res.returncode != 0:
-            logging.error(f"添加防火墙规则失败: {res.stderr}")
+        # 添加新规则 (TCP 445)
+        cmd_tcp = f'netsh advfirewall firewall add rule name="{rule_name}_TCP" dir=in action=allow protocol=TCP localport={port}'
+        # 添加 UDP 覆盖 (UDP 445, 137, 138) 增强发现
+        cmd_udp = f'netsh advfirewall firewall add rule name="{rule_name}_UDP" dir=in action=allow protocol=UDP localport="445,137,138"'
+        
+        res_tcp = subprocess.run(cmd_tcp, shell=True, capture_output=True, text=True)
+        res_udp = subprocess.run(cmd_udp, shell=True, capture_output=True, text=True)
+        
+        if res_tcp.returncode != 0:
+            logging.error(f"添加防火墙规则(TCP)失败: {res_tcp.stderr}")
         else:
-            logging.info(f"已添加防火墙规则: {rule_name}")
+            logging.info(f"已添加防火墙规则: {rule_name}_TCP")
+            
+        if res_udp.returncode != 0:
+            # UDP 失败不影响核心功能，警告即可
+            logging.warning(f"添加防火墙规则(UDP)失败: {res_udp.stderr}")
+        else:
+            logging.info(f"已添加防火墙规则: {rule_name}_UDP")
             
     elif action == 'delete':
-        cmd = f'netsh advfirewall firewall delete rule name="{rule_name}"'
-        subprocess.run(cmd, shell=True, capture_output=True)
+        subprocess.run(f'netsh advfirewall firewall delete rule name="{rule_name}_TCP"', shell=True, capture_output=True)
+        subprocess.run(f'netsh advfirewall firewall delete rule name="{rule_name}_UDP"', shell=True, capture_output=True)
+        
+        # 兼容旧版本规则名
+        subprocess.run(f'netsh advfirewall firewall delete rule name="{rule_name}"', shell=True, capture_output=True)
         logging.info(f"已移除防火墙规则: {rule_name}")
 

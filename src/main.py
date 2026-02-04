@@ -148,31 +148,25 @@ class MainApp:
         # 底部提示
         local_ip = get_local_ip()
         hostname = get_hostname()
-        ttk.Label(main_frame, text=f"提示: 可通过 \\\\{hostname} 或 \\\\{local_ip} 访问 (共享名: {self.share_name.get()})").pack(side=tk.BOTTOM, pady=5)
-
-    def create_section_header(self, parent, text):
-        f = ttk.Frame(parent)
-        f.pack(fill=tk.X, pady=(15, 5))
-        ttk.Label(f, text=text, style='Header.TLabel').pack(side=tk.LEFT)
-        ttk.Separator(f, orient=tk.HORIZONTAL).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10)
-
-    def browse_folder(self):
-        directory = filedialog.askdirectory()
-        if directory:
-            self.share_path.set(directory)
-
-    def toggle_auth_inputs(self):
-        if self.auth_mode.get() == "secure":
-            for child in self.auth_input_frame.winfo_children():
-                child.configure(state='normal')
-        else:
-            for child in self.auth_input_frame.winfo_children():
-                child.configure(state='disabled')
-
+        ttk.Label(main_frame, text=f"访问地址: \\\\{hostname}  或  \\\\{local_ip}").pack(side=tk.BOTTOM, pady=5)
+        
     def check_port(self):
         port = self.port_var.get()
         if is_port_in_use(port):
-            messagebox.showwarning("端口冲突", f"端口 {port} 已被占用！\n建议使用 4445 或其他端口。")
+             # 检查是否是 PID 4
+            is_system = False
+            try:
+                import subprocess
+                res = subprocess.run(f'netstat -ano | findstr :{port}', shell=True, capture_output=True, text=True)
+                if " 4" in res.stdout: # PID 4 ends of line usually
+                     is_system = True
+            except:
+                pass
+            
+            if is_system:
+                messagebox.showwarning("端口冲突 (System)", f"端口 {port} 被 System (PID 4) 占用。\n这是 Windows 内核驱动 (srv.sys) 导致的。\n\n请点击【一键修复环境】按钮，然后重启电脑。")
+            else:
+                messagebox.showwarning("端口冲突", f"端口 {port} 已被占用！")
         else:
             messagebox.showinfo("端口检查", f"端口 {port} 可用。")
 
