@@ -24,6 +24,13 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
         from impacket import smbserver
         from impacket.ntlm import compute_lmhash, compute_nthash
         import signal
+        from src.license_manager import license_manager
+
+        # [v2.0] Double-check License in child process
+        valid, msg, _ = license_manager.verify()
+        if not valid:
+            logger.error(f"[FATAL] License Validation Failed: {msg}")
+            sys.exit(1)
 
 
         
