@@ -221,13 +221,13 @@ def fix_port_445_environment():
         # 简单方案: 尽可能在 CMD 里做完。
         # Hosts 文件追加一行: echo 127.... >> ... 
         
-        import socket
-        hn = socket.gethostname()
-        hosts_f = r"C:\Windows\System32\drivers\etc\hosts"
-        # 注意: echo 在 cmd 中处理换行很微妙。
-        # 尝试追加
-        commands.append(f'echo.>>"{hosts_f}"') # 确保新行
-        commands.append(f'echo 127.0.0.1 {hn} # Auto-added>>"{hosts_f}"')
+        # [v1.19] 使用 PowerShell 写入 Hosts，解决 CMD echo 换行和编码问题
+        # `r`n 确保换行
+        ps_cmd = f"Add-Content -Path 'C:\\Windows\\System32\\drivers\\etc\\hosts' -Value \"`r`n127.0.0.1 $env:COMPUTERNAME\" -Force"
+        commands.append(f'powershell -Command "{ps_cmd}"')
+
+        # commands.append(f'echo.>>"{hosts_f}"') # 确保新行
+        # commands.append(f'echo 127.0.0.1 {hn} # Auto-added>>"{hosts_f}"')
 
         commands.append('echo.')
         commands.append('echo ---------------------------------------')
@@ -547,11 +547,16 @@ def run_system_diagnostics():
              report.append(f"读取 Hosts 文件出错: {e}")
 
         if content:
-            if f"127.0.0.1       {hostname}" in content:
+            # [v1.19] 使用 Regex 严格检查，必须是行首且非注释
+            # 兼容域名后可能有注释的情况
+            pattern = r"^\s*127\.0\.0\.1\s+" + re.escape(hostname)
+            if re.search(pattern, content, re.MULTILINE):
                 report.append(f"✅ 已包含本机重定向记录: 127.0.0.1 {hostname}")
             else:
-                report.append(f"❌ 未找到本机重定向记录 (预期: 127.0.0.1 {hostname})。")
-                report.append("   解决方案: 点击【一键修复环境】。")
+                report.append(f"❌ 未找到有效的本机重定向记录 (预期: 127.0.0.1 {hostname})。")
+                if f"127.0.0.1       {hostname}" in content:
+                     report.append("   (检测到字符串存在但格式可能错误，例如在注释行中或没有换行)")
+                report.append("   解决方案: 点击【一键修复环境】或【手动修改 Hosts】。")
     except Exception as e:
         report.append(f"Hosts 检查逻辑错误: {e}")
 
