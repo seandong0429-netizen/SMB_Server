@@ -288,6 +288,32 @@ def fix_port_445_environment():
                 subprocess.run('reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanServer\\Parameters" /v DisableStrictNameChecking /t REG_DWORD /d 1 /f', shell=True, capture_output=True)
                 subprocess.run('reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa" /v DisableLoopbackCheck /t REG_DWORD /d 1 /f', shell=True, capture_output=True)
 
+            # 7. [NEW v1.13] 客户端访问策略增强 & Hosts 补丁
+            try:
+                # 允许启用不安全的来宾登录 (针对本机访问本机常遇到的策略阻止)
+                # LanmanWorkstation Parameters
+                subprocess.run('reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters" /v AllowInsecureGuestAuth /t REG_DWORD /d 1 /f', shell=True, capture_output=True)
+                
+                # [Critical Fix] 修改 Hosts 文件，强制本机计算机名解析为 127.0.0.1 (IPv4)
+                # 解决 Windows 默认将 localhost/计算机名解析为 IPv6 (::1)，而我们服务仅监听 IPv4 的问题
+                hostname = socket.gethostname()
+                hosts_path = r"C:\Windows\System32\drivers\etc\hosts"
+                entry = f"\n127.0.0.1       {hostname}    # Auto-added by SMBServer"
+                
+                try:
+                    with open(hosts_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        content = f.read()
+                        
+                    if f"127.0.0.1       {hostname}" not in content:
+                        with open(hosts_path, 'a', encoding='utf-8') as f:
+                            f.write(entry)
+                except Exception as e:
+                    # 如果写文件失败(通常需管理员权限)，尝试用 echo 命令追加
+                    subprocess.run(f'echo {entry} >> "{hosts_path}"', shell=True, capture_output=True)
+
+            except Exception:
+                pass
+
         except Exception:
             pass
         
