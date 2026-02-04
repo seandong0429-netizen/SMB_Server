@@ -48,11 +48,11 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
         # 初始化 SimpleSMBServer
         server = smbserver.SimpleSMBServer(listenAddress='0.0.0.0', listenPort=port)
         
-        # [v1.14] 显式设置服务端名称，防止 NTLM 身份验证时的目标名称不匹配
-        # 很多时候访问 IP 正常但访问 Hostname 失败就是因为 Server 宣称自己是 "*SMBSERVER"
-        real_hostname = get_hostname()
-        if real_hostname:
-            server.setServerName(real_hostname)
+        # [v1.14] Reverted: SimpleSMBServer object has no attribute 'setServerName'
+        # 我们暂时不仅是用此方法，而是依赖 hosts 文件和注册表
+        # real_hostname = get_hostname()
+        # if real_hostname:
+        #     server.setServerName(real_hostname)
         
         # 添加共享文件夹
         server.addShare(share_name, share_path, shareComment='SMB Share')

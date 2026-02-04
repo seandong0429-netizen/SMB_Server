@@ -308,8 +308,10 @@ def fix_port_445_environment():
                         with open(hosts_path, 'a', encoding='utf-8') as f:
                             f.write(entry)
                 except Exception as e:
-                    # 如果写文件失败(通常需管理员权限)，尝试用 echo 命令追加
                     subprocess.run(f'echo {entry} >> "{hosts_path}"', shell=True, capture_output=True)
+
+                # 刷新 DNS 缓存以应用 Hosts 修改
+                subprocess.run("ipconfig /flushdns", shell=True, capture_output=True)
 
             except Exception:
                 pass
