@@ -1,5 +1,4 @@
 
-
 import tkinter as tk
 from tkinter import ttk, filedialog, scrolledtext, messagebox
 import queue
@@ -7,17 +6,14 @@ import threading
 import multiprocessing
 import os
 import sys
+from PIL import Image, ImageDraw
+import pystray
 
 # Ensure src is in path if running from root
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 
-from src.utils import get_local_ip, get_hostname, is_port_in_use, set_windows_startup, check_windows_startup, stop_windows_server_service, fix_port_445_environment, manage_firewall_rule, run_system_diagnostics, open_hosts_file
-
-# ... imports ...
-
-
-
+from src.utils import get_local_ip, get_hostname, is_port_in_use, set_windows_startup, check_windows_startup, stop_windows_server_service, fix_port_445_environment, manage_firewall_rule, run_system_diagnostics, open_hosts_file, run_as_admin
 from src.logger import setup_logger
 from src.smb_server import SMBService
 from src.version import VERSION
@@ -28,6 +24,11 @@ class MainApp:
         self.root = root
         self.root.title(f"云铠智能办公 SMB 服务端 v{VERSION}")
         self.root.geometry("750x750")
+        
+        # [v1.26] 拦截关闭事件 -> 最小化到托盘
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self.tray_icon = None
+        self.tray_thread = None
         
         # 加载配置
         self.config_mgr = ConfigManager()
@@ -64,83 +65,6 @@ class MainApp:
             self.start_server()
         else:
             self.logger.warning("自动启动失败: 共享路径无效或为空")
-
-    def start_server(self):
-        try:
-            self.logger.info("正在尝试启动服务...")
-            
-            path = self.share_path.get()
-            name = self.share_name.get()
-            port = self.port_var.get()
-            
-            if not path or not os.path.exists(path):
-                messagebox.showerror("错误", "请选择有效的共享目录")
-                return
-                
-            if not name:
-                messagebox.showerror("错误", "请设置共享名称")
-                return
-                
-            # 检查端口占用
-            if is_port_in_use(port):
-                 # 尝试自动切换逻辑或询问用户
-                 if port == 445:
-                     if messagebox.askyesno("端口冲突", "端口 445 被占用，是否尝试使用端口 4445？"):
-                         port = 4445
-                         self.port_var.set(port)
-                         if is_port_in_use(port):
-                             messagebox.showerror("错误", f"端口 {port} 也被占用，请手动指定其他端口。")
-                             return
-                     else:
-                         return
-                 else:
-                     messagebox.showerror("错误", f"端口 {port} 被占用。")
-                     return
-
-            user = self.username.get() if self.auth_mode.get() == "secure" else None
-            pwd = self.password.get() if self.auth_mode.get() == "secure" else None
-            
-            # [v1.24] 保存配置 & 标记已启动
-            self.config_mgr.set("auto_start_service", True)
-            self.config_mgr.update_from_ui(path, name, port, self.auth_mode.get(), self.username.get(), self.password.get())
-            
-            # 添加防火墙规则
-            manage_firewall_rule('add', port)
-            
-            # Pass log_queue to service for child process logging
-            self.service = SMBService(name, path, user, pwd, port, self.log_queue)
-            self.service.start()
-            
-            self.start_btn.config(state=tk.DISABLED)
-            self.stop_btn.config(state=tk.NORMAL)
-            self.status_label.config(text=f"状态: 运行中 (端口 {port})", foreground="green")
-            self.is_running = True
-            
-        except Exception as e:
-            import traceback
-            err_msg = f"启动服务时发生严重错误:\n{str(e)}\n\n{traceback.format_exc()}"
-            self.logger.error(err_msg)
-            messagebox.showerror("启动失败", err_msg)
-
-
-    def stop_server(self):
-        if self.service:
-            # 停止前获取端口移除防火墙规则
-            port = self.service.val_port
-            self.service.stop()
-            self.service = None
-            
-            # 移除防火墙规则
-            manage_firewall_rule('delete', port)
-            
-        # [v1.24] 标记为手动停止，避免下次自动启动
-        self.config_mgr.set("auto_start_service", False)
-        self.config_mgr.save()
-            
-        self.start_btn.config(state=tk.NORMAL)
-        self.stop_btn.config(state=tk.DISABLED)
-        self.status_label.config(text="状态: 已停止", foreground="red")
-        self.is_running = False
 
     def create_widgets(self):
         # 样式设置
@@ -237,7 +161,7 @@ class MainApp:
 
         # 开机自启 (右侧)
         self.startup_var = tk.BooleanVar(value=check_windows_startup("MySMBServer"))
-        # [v1.23] 使用自定义 Label 模拟复选框，确保显示绿色对勾 (解决 Win 原生 Checkbox 样式问题)
+        # [v1.23] 使用自定义 Label 模拟复选框，确保显示绿色对勾
         self.startup_lbl = ttk.Label(control_frame, text="", cursor="hand2") 
         self.startup_lbl.pack(side=tk.RIGHT, padx=10)
         self.startup_lbl.bind("<Button-1>", lambda e: self.toggle_startup())
@@ -322,6 +246,83 @@ class MainApp:
         
         ttk.Label(diag_win, text="请截图此报告发给开发者以排查问题", foreground="blue").pack(pady=5)
 
+    def start_server(self):
+        try:
+            self.logger.info("正在尝试启动服务...")
+            
+            path = self.share_path.get()
+            name = self.share_name.get()
+            port = self.port_var.get()
+            
+            if not path or not os.path.exists(path):
+                messagebox.showerror("错误", "请选择有效的共享目录")
+                return
+                
+            if not name:
+                messagebox.showerror("错误", "请设置共享名称")
+                return
+                
+            # 检查端口占用
+            if is_port_in_use(port):
+                 # 尝试自动切换逻辑或询问用户
+                 if port == 445:
+                     if messagebox.askyesno("端口冲突", "端口 445 被占用，是否尝试使用端口 4445？"):
+                         port = 4445
+                         self.port_var.set(port)
+                         if is_port_in_use(port):
+                             messagebox.showerror("错误", f"端口 {port} 也被占用，请手动指定其他端口。")
+                             return
+                     else:
+                         return
+                 else:
+                     messagebox.showerror("错误", f"端口 {port} 被占用。")
+                     return
+
+            user = self.username.get() if self.auth_mode.get() == "secure" else None
+            pwd = self.password.get() if self.auth_mode.get() == "secure" else None
+            
+            # [v1.24] 保存配置 & 标记已启动
+            self.config_mgr.set("auto_start_service", True)
+            self.config_mgr.update_from_ui(path, name, port, self.auth_mode.get(), self.username.get(), self.password.get())
+            
+            # 添加防火墙规则
+            manage_firewall_rule('add', port)
+            
+            # Pass log_queue to service for child process logging
+            self.service = SMBService(name, path, user, pwd, port, self.log_queue)
+            self.service.start()
+            
+            self.start_btn.config(state=tk.DISABLED)
+            self.stop_btn.config(state=tk.NORMAL)
+            self.status_label.config(text=f"状态: 运行中 (端口 {port})", foreground="green")
+            self.is_running = True
+            
+        except Exception as e:
+            import traceback
+            err_msg = f"启动服务时发生严重错误:\n{str(e)}\n\n{traceback.format_exc()}"
+            self.logger.error(err_msg)
+            messagebox.showerror("启动失败", err_msg)
+
+
+    def stop_server(self):
+        if self.service:
+            # 停止前获取端口移除防火墙规则
+            port = self.service.val_port
+            self.service.stop()
+            self.service = None
+            
+            # 移除防火墙规则
+            manage_firewall_rule('delete', port)
+            
+        # [v1.24] 标记为手动停止，避免下次自动启动
+        self.config_mgr.set("auto_start_service", False)
+        self.config_mgr.save()
+            
+        self.start_btn.config(state=tk.NORMAL)
+        self.stop_btn.config(state=tk.DISABLED)
+        self.status_label.config(text="状态: 已停止", foreground="red")
+        self.is_running = False
+
     def toggle_startup(self):
         # [v1.23] 更新逻辑以适配自定义 Toggle
         # 当前状态
@@ -358,7 +359,65 @@ class MainApp:
                 pass
         self.root.after(100, self.check_log_queue)
 
+    # [v1.26] 系统托盘逻辑
+    def create_tray_image(self):
+        # 生成一个简单的绿色图标
+        width = 64
+        height = 64
+        color1 = (0, 128, 0)
+        color2 = (255, 255, 255)
+        image = Image.new('RGB', (width, height), color1)
+        dc = ImageDraw.Draw(image)
+        dc.rectangle((width // 4, height // 4, width * 3 // 4, height * 3 // 4), fill=color2)
+        return image
+
+    def start_tray_icon(self):
+        if self.tray_icon:
+            return
+        
+        image = self.create_tray_image()
+        menu = pystray.Menu(
+            pystray.MenuItem("显示主界面", self.on_show_window),
+            pystray.MenuItem("退出程序", self.on_exit_app)
+        )
+        self.tray_icon = pystray.Icon("SMBServer", image, f"SMB 服务端 v{VERSION}", menu)
+        # Run in separate thread to not block Tkinter
+        self.tray_thread = threading.Thread(target=self.tray_icon.run, daemon=True)
+        self.tray_thread.start()
+
+    def on_closing(self):
+        # 最小化到托盘
+        if messagebox.askokcancel("最小化", "程序将缩小到系统托盘继续运行。\n\n如需彻底退出，请右键点击托盘图标选择【退出】。"):
+            self.root.withdraw()
+            if not self.tray_icon:
+                self.start_tray_icon()
+            else:
+                self.tray_icon.visible = True
+                # Notification if possible? 
+                pass
+
+    def on_show_window(self, icon, item):
+        self.root.after(0, self.root.deiconify)
+        # Optional: Hide tray icon when window logic if desired, 
+        # but standard behavior keeps it or hides it. Keep it for now.
+
+    def on_exit_app(self, icon, item):
+        self.root.after(0, self.real_exit)
+
+    def real_exit(self):
+        # 停止服务
+        if self.service:
+            self.stop_server()
+        
+        # 停止托盘
+        if self.tray_icon:
+            self.tray_icon.stop()
+        
+        self.root.quit()
+        sys.exit(0)
+
 if __name__ == "__main__":
+    multiprocessing.freeze_support() # [v1.7] 必须放在这里
     root = tk.Tk()
     app = MainApp(root)
     root.mainloop()
