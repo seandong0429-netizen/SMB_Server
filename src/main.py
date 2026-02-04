@@ -12,7 +12,7 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 
-from src.utils import get_local_ip, get_hostname, is_port_in_use, set_windows_startup, check_windows_startup, stop_windows_server_service, fix_port_445_environment, manage_firewall_rule, run_system_diagnostics
+from src.utils import get_local_ip, get_hostname, is_port_in_use, set_windows_startup, check_windows_startup, stop_windows_server_service, fix_port_445_environment, manage_firewall_rule, run_system_diagnostics, open_hosts_file
 
 # ... imports ...
 
@@ -121,6 +121,8 @@ class MainApp:
         ttk.Button(port_frame, text="一键修复环境 (推荐)", command=self.fix_environment_445).pack(side=tk.LEFT, padx=10)
         # [v1.16] 诊断按钮
         ttk.Button(port_frame, text="环境诊断", command=self.show_diagnostics).pack(side=tk.LEFT, padx=0)
+        # [v1.18] 手动修改 Hosts 按钮
+        ttk.Button(port_frame, text="手动修改 Hosts", command=self.manual_edit_hosts).pack(side=tk.LEFT, padx=10)
 
         # 3. 控制与状态
         self.create_section_header(main_frame, "3. 服务控制")
@@ -215,7 +217,20 @@ class MainApp:
         text_area.insert(tk.END, report)
         text_area.config(state=tk.DISABLED) # 只读
         
+        text_area.config(state=tk.DISABLED) # 只读
+        
         ttk.Label(diag_win, text="请截图此报告发给开发者以排查问题", foreground="blue").pack(pady=5)
+
+    def manual_edit_hosts(self):
+        """手动打开 Hosts 文件"""
+        success, msg = open_hosts_file()
+        if not success:
+            messagebox.showerror("错误", msg)
+        else:
+            # 提示用户怎么改
+            hostname = get_hostname()
+            info = f"即将为您打开 Hosts 文件。\n请在文件末尾手动添加一行：\n\n127.0.0.1       {hostname}\n\n添加后保存并关闭记事本即可。"
+            messagebox.showinfo("手动修改指引", info)
 
     def start_server(self):
         try:

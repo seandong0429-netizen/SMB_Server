@@ -7,6 +7,7 @@ import os
 import subprocess
 import time
 import re
+import ctypes
 
 def set_windows_startup(name, enable=True):
     """设置 Windows 开机自启 (通过注册表)"""
@@ -556,3 +557,17 @@ def run_system_diagnostics():
 
     report.append("\n=== 诊断结束 ===")
     return "\n".join(report)
+
+def open_hosts_file():
+    """以管理员身份用记事本打开 Hosts 文件"""
+    if platform.system() != 'Windows':
+        return
+        
+    hosts_path = r"C:\Windows\System32\drivers\etc\hosts"
+    try:
+        # 使用 ShellExecuteW 提权运行 notepad
+        # operation="runas" 请求管理员权限
+        ctypes.windll.shell32.ShellExecuteW(None, "runas", "notepad.exe", hosts_path, None, 1)
+        return True, "已尝试打开 Hosts 文件，请在弹出的记事本中手动编辑并保存。"
+    except Exception as e:
+        return False, f"打开失败: {str(e)}"
