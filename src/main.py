@@ -152,7 +152,9 @@ class MainApp:
         # 底部提示
         local_ip = get_local_ip()
         hostname = get_hostname()
-        ttk.Label(main_frame, text=f"访问地址: \\\\{hostname}  或  \\\\{local_ip}").pack(side=tk.BOTTOM, pady=5)
+        # [v1.22] 优先推荐 127.0.0.1，因为这是最稳的本机访问方式
+        ttk.Label(main_frame, text=f"本机访问推荐: \\\\127.0.0.1  (或 \\\\{hostname})").pack(side=tk.BOTTOM, pady=(0, 5))
+        ttk.Label(main_frame, text=f"局域网访问: \\\\{local_ip}").pack(side=tk.BOTTOM, pady=(5, 0))
 
     def create_section_header(self, parent, text):
         f = ttk.Frame(parent)

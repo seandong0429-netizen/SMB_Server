@@ -45,10 +45,16 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
 
         logger.info("已开启端口重用 (allow_reuse_address=True)")
 
-        # 初始化 SimpleSMBServer
-        server = smbserver.SimpleSMBServer(listenAddress='0.0.0.0', listenPort=port)
-        
-        # [v1.14] Reverted: SimpleSMBServer object has no attribute 'setServerName'
+        try:
+            # [v1.22] 尝试优先绑定 IPv6 (::) 以支持双栈 (如果系统支持)
+            # 现代 Windows 的 localhost 经常解析为 ::1，如果只监听 IPv4 会导致 connection refused
+            server = smbserver.SimpleSMBServer(listenAddress='::', listenPort=port)
+            logger.info("已绑定 IPv6 双栈接口 (::)")
+        except Exception as e:
+            logger.warning(f"绑定 IPv6 失败 ({e})，回退到 IPv4 (0.0.0.0)")
+            server = smbserver.SimpleSMBServer(listenAddress='0.0.0.0', listenPort=port)
+            
+        # [v1.14] 显式设置服务端名称，防止 NTLM 身份验证时的目标名称不匹配SimpleSMBServer object has no attribute 'setServerName'
         # 我们暂时不仅是用此方法，而是依赖 hosts 文件和注册表
         # real_hostname = get_hostname()
         # if real_hostname:
