@@ -272,8 +272,10 @@ def manage_firewall_rule(action, port=445):
     rule_name = f"PythonSMBServer_Port{port}"
     
     if action == 'add':
-        # 先尝试删除旧规则，避免重复
+        # 先尝试删除旧规则，避免重复 (包括新的 _TCP/_UDP 和旧的默认规则)
         subprocess.run(f'netsh advfirewall firewall delete rule name="{rule_name}"', shell=True, capture_output=True)
+        subprocess.run(f'netsh advfirewall firewall delete rule name="{rule_name}_TCP"', shell=True, capture_output=True)
+        subprocess.run(f'netsh advfirewall firewall delete rule name="{rule_name}_UDP"', shell=True, capture_output=True)
         # 添加新规则 (TCP 445)
         cmd_tcp = f'netsh advfirewall firewall add rule name="{rule_name}_TCP" dir=in action=allow protocol=TCP localport={port}'
         # 添加 UDP 覆盖 (UDP 445, 137, 138) 增强发现

@@ -25,20 +25,7 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
         from impacket.ntlm import compute_lmhash, compute_nthash
         import signal
 
-        # 自定义 SMB Server 类以开启端口重用
-        class CustomSMBServer(smbserver.SimpleSMBServer):
-            def __init__(self, listenAddress='0.0.0.0', listenPort=445):
-                # 必须在初始化父类之前设置 allow_reuse_address
-                # 但 SimpleSMBServer 内部创建 SocketServer，且没有直接暴露 allow_reuse_address
-                # 需要 Monkey Patch 或者继承其父类。
-                # SimpleSMBServer 继承自 structure.Structure? 不，它是 helper
-                # 实际上 SimpleSMBServer 是一个封装类。
-                # 正确的做法是：直接修改 SimpleSMBServer 实例的属性可能来不及（socket 已创建）
-                # impacket 的 SimpleSMBServer 在 __init__ 时就已经创建 socket 了。
-                # 我们需要 override 它的 __init__ 或者更加底层的 tcpserver。
-                # 简化方案: 直接在 smbserver 模块级别打补丁，或者...
-                # Impacket 的 SimpleSMBServer 使用 smbserver.SMBSERVER (which uses SocketServer.ThreadingTCPServer)
-                pass
+
         
         # 更好的方法：我们在创建 SimpleSMBServer 之前，Hack socketserver
         import socketserver
