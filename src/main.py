@@ -18,11 +18,19 @@ from src.logger import setup_logger
 from src.smb_server import SMBService
 from src.version import VERSION
 from src.config import ConfigManager
+from src.license_manager import license_manager
 
 class MainApp:
     def __init__(self, root):
         self.root = root
-        self.root.title(f"云铠智能办公 SMB 服务端 v{VERSION}")
+        
+        # [v2.0] License 启动校验
+        valid, msg, meta = license_manager.verify()
+        if not valid:
+            messagebox.showerror("授权失败", f"程序无法启动: {msg}")
+            sys.exit(1)
+        
+        self.root.title(f"云铠智能办公 SMB 服务端 v{VERSION} (Licensed)")
         self.root.geometry("750x750")
         
         # [v1.26] 拦截关闭事件 -> 最小化到托盘
@@ -414,6 +422,9 @@ class MainApp:
         # 停止托盘
         if self.tray_icon:
             self.tray_icon.stop()
+            
+        # [v2.0] 更新运行锚点 (记录最后运行时间)
+        license_manager.update_anchor()
         
         self.root.quit()
         sys.exit(0)
