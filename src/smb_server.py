@@ -57,11 +57,11 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
             nthash = compute_nthash(password)
             server.addCredential(username, 0, lmhash, nthash)
             server.setSMB2Support(True)
+            # [v1.12] 优化兼容性: 允许计算机名访问时的匿名探测
             server.setSMBChallenge('')
         else:
             server.setSMB2Support(True)
             server.setSMBChallenge('')
-            server.setSMB2Support(True)
 
         logger.info("SMB 服务准备就绪，开始监听...")
         
