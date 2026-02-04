@@ -261,7 +261,66 @@ class MainApp:
         ttk.Label(f, text=text, style='Header.TLabel').pack(side=tk.LEFT)
         ttk.Separator(f, orient=tk.HORIZONTAL).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10)
 
-    # ... (omitted methods) ...
+    def browse_folder(self):
+        directory = filedialog.askdirectory()
+        if directory:
+            self.share_path.set(directory)
+
+    def toggle_auth_inputs(self):
+        if self.auth_mode.get() == "secure":
+            for child in self.auth_input_frame.winfo_children():
+                child.configure(state='normal')
+        else:
+            for child in self.auth_input_frame.winfo_children():
+                child.configure(state='disabled')
+        
+    def check_port(self):
+        port = self.port_var.get()
+        if is_port_in_use(port):
+             # 检查是否是 PID 4
+            is_system = False
+            try:
+                import subprocess
+                res = subprocess.run(f'netstat -ano | findstr :{port}', shell=True, capture_output=True, text=True)
+                if " 4" in res.stdout: # PID 4 ends of line usually
+                     is_system = True
+            except:
+                pass
+            
+            if is_system:
+                messagebox.showwarning("端口冲突 (System)", f"端口 {port} 被 System (PID 4) 占用。\n这是 Windows 内核驱动 (srv.sys) 导致的。\n\n请点击【一键修复环境】按钮，然后重启电脑。")
+            else:
+                messagebox.showwarning("端口冲突", f"端口 {port} 已被占用！")
+        else:
+            messagebox.showinfo("端口检查", f"端口 {port} 可用。")
+
+    def fix_environment_445(self):
+        """一键修复环境"""
+        if messagebox.askyesno("环境修复", "此操作将执行以下环境修复：\n\n1. 修改注册表禁用 SMBDevice 驱动 (Start=4)\n2. 强制停止 Windows Server 服务\n\n注意：此操作需要【管理员权限】，会弹出黑色命令窗口。\n执行成功后，即使当前端口未立即释放，【重启电脑】后即可解决问题。\n\n是否继续？"):
+            success, msg = fix_port_445_environment()
+            if success:
+                messagebox.showinfo("操作已提交", msg)
+            else:
+                messagebox.showerror("操作失败", msg)
+
+    def show_diagnostics(self):
+        """显示系统环境诊断报告"""
+        report = run_system_diagnostics()
+        
+        # 创建弹窗显示报告
+        diag_win = tk.Toplevel(self.root)
+        diag_win.title("系统环境诊断报告")
+        diag_win.geometry("600x500")
+        
+        text_area = scrolledtext.ScrolledText(diag_win, width=80, height=30, font=('Consolas', 9))
+        text_area.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        text_area.insert(tk.END, report)
+        text_area.config(state=tk.DISABLED) # 只读
+        
+        text_area.config(state=tk.DISABLED) # 只读
+        
+        ttk.Label(diag_win, text="请截图此报告发给开发者以排查问题", foreground="blue").pack(pady=5)
 
     def toggle_startup(self):
         # [v1.23] 更新逻辑以适配自定义 Toggle
