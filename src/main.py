@@ -227,9 +227,20 @@ class MainApp:
         if not success:
             messagebox.showerror("错误", msg)
         else:
-            # 提示用户怎么改
+            # [v1.21] 自动复制到剪贴板，方便用户粘贴
             hostname = get_hostname()
-            info = f"即将为您打开 Hosts 文件。\n请在文件末尾手动添加一行：\n\n127.0.0.1       {hostname}\n\n添加后保存并关闭记事本即可。"
+            line_to_add = f"127.0.0.1       {hostname}"
+            
+            try:
+                self.root.clipboard_clear()
+                self.root.clipboard_append(line_to_add)
+                self.root.update() # Keep clipboard
+                clip_msg = "已自动复制到剪贴板！"
+            except:
+                clip_msg = "请手动复制下方内容："
+
+            # 提示用户怎么改
+            info = f"即将为您打开 Hosts 文件。\n\n需要添加的内容 ({clip_msg})：\n{line_to_add}\n\n请在打开的记事本【最后一行】直接粘贴 (Ctrl+V)，然后保存即可。"
             messagebox.showinfo("手动修改指引", info)
 
     def start_server(self):

@@ -221,10 +221,32 @@ def fix_port_445_environment():
         # 简单方案: 尽可能在 CMD 里做完。
         # Hosts 文件追加一行: echo 127.... >> ... 
         
-        # [v1.19] 使用 PowerShell 写入 Hosts，解决 CMD echo 换行和编码问题
-        # `r`n 确保换行
-        ps_cmd = f"Add-Content -Path 'C:\\Windows\\System32\\drivers\\etc\\hosts' -Value \"`r`n127.0.0.1 $env:COMPUTERNAME\" -Force"
-        commands.append(f'powershell -Command "{ps_cmd}"')
+        # [v1.21] 解锁 Hosts 文件 (去只读/隐藏/系统属性)
+        # 很多时候写入失败是因为文件属性被设为了只读
+        commands.append(f'attrib -r -s -h "C:\\Windows\\System32\\drivers\\etc\\hosts"')
+
+        # [v1.21] 使用 PowerShell 写入 Hosts (Hybrid Strategy)
+        # 1. 再次确保去只读
+        # 2. 检测最后一行是否有换行符，没有则补齐
+        # 3. 追加记录
+        # 4. 强制刷新 DNS
+        ps_script = """
+        $hosts = 'C:\\Windows\\System32\\drivers\\etc\\hosts';
+        if (Test-Path $hosts) {
+            Set-ItemProperty -Path $hosts -Name IsReadOnly -Value $false -ErrorAction SilentlyContinue;
+            $content = Get-Content $hosts -Raw;
+            if ($content -notmatch '\\n$') { Add-Content -Path $hosts -Value \"`r`n\" -NoNewline };
+            Add-Content -Path $hosts -Value \"127.0.0.1 $env:COMPUTERNAME\" -Force;
+        }
+        """
+        # 将多行 PS 脚本压缩为一行执行 (由于 cmd limitation，稍微简化一下)
+        # 实际上直接用 multiple Add-Content 比较稳
+        
+        commands.append(f'powershell -Command "Set-ItemProperty -Path \'C:\\Windows\\System32\\drivers\\etc\\hosts\' -Name IsReadOnly -Value $false"')
+        # 补换行 (如果需要) - 简单粗暴补一个空行
+        commands.append(f'powershell -Command "Add-Content -Path \'C:\\Windows\\System32\\drivers\\etc\\hosts\' -Value \"`r`n\" -Force"')
+        # 追加记录
+        commands.append(f'powershell -Command "Add-Content -Path \'C:\\Windows\\System32\\drivers\\etc\\hosts\' -Value \"127.0.0.1 $env:COMPUTERNAME\" -Force"')
 
         # commands.append(f'echo.>>"{hosts_f}"') # 确保新行
         # commands.append(f'echo 127.0.0.1 {hn} # Auto-added>>"{hosts_f}"')
