@@ -250,6 +250,29 @@ def fix_port_445_environment():
             # 5. 清理 NetBIOS 缓存 (解决部分占用的玄学问题)
             subprocess.run("nbtstat -R", shell=True, capture_output=True)
             subprocess.run("nbtstat -RR", shell=True, capture_output=True)
+            subprocess.run("nbtstat -RR", shell=True, capture_output=True)
+
+            # 6. [NEW] 注册表优化: 允许别名访问 (DisableStrictNameChecking) 和 回环检查 (DisableLoopbackCheck)
+            # 这对于通过计算机名访问非常关键
+            try:
+                # LanmanServer Parameters
+                key_params = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                                          r"SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters", 
+                                          0, winreg.KEY_SET_VALUE)
+                winreg.SetValueEx(key_params, "DisableStrictNameChecking", 0, winreg.REG_DWORD, 1)
+                winreg.CloseKey(key_params)
+
+                # Lsa
+                key_lsa = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                                       r"SYSTEM\CurrentControlSet\Control\Lsa", 
+                                       0, winreg.KEY_SET_VALUE)
+                winreg.SetValueEx(key_lsa, "DisableLoopbackCheck", 0, winreg.REG_DWORD, 1)
+                winreg.CloseKey(key_lsa)
+            except Exception:
+                # 如果打开失败，尝试用命令补充
+                subprocess.run('reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanServer\\Parameters" /v DisableStrictNameChecking /t REG_DWORD /d 1 /f', shell=True, capture_output=True)
+                subprocess.run('reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa" /v DisableLoopbackCheck /t REG_DWORD /d 1 /f', shell=True, capture_output=True)
+
         except Exception:
             pass
         
@@ -278,8 +301,9 @@ def manage_firewall_rule(action, port=445):
         subprocess.run(f'netsh advfirewall firewall delete rule name="{rule_name}_UDP"', shell=True, capture_output=True)
         # 添加新规则 (TCP 445)
         cmd_tcp = f'netsh advfirewall firewall add rule name="{rule_name}_TCP" dir=in action=allow protocol=TCP localport={port}'
-        # 添加 UDP 覆盖 (UDP 445, 137, 138) 增强发现
-        cmd_udp = f'netsh advfirewall firewall add rule name="{rule_name}_UDP" dir=in action=allow protocol=UDP localport="445,137,138"'
+        # 添加 UDP 覆盖 (UDP 445, 137, 138, 5355) 增强发现
+        # 5355 is LLMNR (Link-Local Multicast Name Resolution) - vital for hostname with no DNS
+        cmd_udp = f'netsh advfirewall firewall add rule name="{rule_name}_UDP" dir=in action=allow protocol=UDP localport="445,137,138,5355"'
         
         res_tcp = subprocess.run(cmd_tcp, shell=True, capture_output=True, text=True)
         res_udp = subprocess.run(cmd_udp, shell=True, capture_output=True, text=True)
