@@ -339,6 +339,7 @@ def manage_firewall_rule(action, port=445):
     elif action == 'delete':
         subprocess.run(f'netsh advfirewall firewall delete rule name="{rule_name}_TCP"', shell=True, capture_output=True)
         subprocess.run(f'netsh advfirewall firewall delete rule name="{rule_name}_UDP"', shell=True, capture_output=True)
+        subprocess.run(f'netsh advfirewall firewall delete rule name="{rule_name}_ICMP"', shell=True, capture_output=True)
         
         # 兼容旧版本规则名
         subprocess.run(f'netsh advfirewall firewall delete rule name="{rule_name}"', shell=True, capture_output=True)
