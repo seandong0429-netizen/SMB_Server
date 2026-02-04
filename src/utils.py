@@ -258,6 +258,11 @@ def fix_port_445_environment():
             # 这对计算机名解析至关重要
             subprocess.run("sc config lmhosts start= auto", shell=True, capture_output=True)
             subprocess.run("net start lmhosts /y", shell=True, capture_output=True)
+
+            # [v1.12] 强制开启 FDResPub (Function Discovery Resource Publication)
+            # 这让电脑能在"网络"邻居里被发现 (WSD协议)
+            subprocess.run("sc config FDResPub start= auto", shell=True, capture_output=True)
+            subprocess.run("net start FDResPub /y", shell=True, capture_output=True)
             
             # Browser 服务通常依赖 Server 服务，如果 Server 被我们关了，Browser 也起不来
             # 但我们还是尝试一下，或者至少保证 lmhosts 是活着的
