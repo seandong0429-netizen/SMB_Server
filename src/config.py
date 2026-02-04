@@ -23,7 +23,7 @@ class ConfigManager:
     def _load_default(self):
         return {
             "share_path": "",
-            "share_name": "MyShare",
+            "share_name": "share",
             "port": 445,
             "auth_mode": "anonymous",
             "username": "admin",
