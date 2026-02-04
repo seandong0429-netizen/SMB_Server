@@ -149,6 +149,25 @@ class MainApp:
         local_ip = get_local_ip()
         hostname = get_hostname()
         ttk.Label(main_frame, text=f"访问地址: \\\\{hostname}  或  \\\\{local_ip}").pack(side=tk.BOTTOM, pady=5)
+
+    def create_section_header(self, parent, text):
+        f = ttk.Frame(parent)
+        f.pack(fill=tk.X, pady=(15, 5))
+        ttk.Label(f, text=text, style='Header.TLabel').pack(side=tk.LEFT)
+        ttk.Separator(f, orient=tk.HORIZONTAL).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10)
+
+    def browse_folder(self):
+        directory = filedialog.askdirectory()
+        if directory:
+            self.share_path.set(directory)
+
+    def toggle_auth_inputs(self):
+        if self.auth_mode.get() == "secure":
+            for child in self.auth_input_frame.winfo_children():
+                child.configure(state='normal')
+        else:
+            for child in self.auth_input_frame.winfo_children():
+                child.configure(state='disabled')
         
     def check_port(self):
         port = self.port_var.get()
