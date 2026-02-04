@@ -5,6 +5,8 @@ import platform
 import sys
 import os
 import subprocess
+import time
+import re
 
 def set_windows_startup(name, enable=True):
     """设置 Windows 开机自启 (通过注册表)"""
@@ -378,3 +380,143 @@ def manage_firewall_rule(action, port=445):
         subprocess.run(f'netsh advfirewall firewall delete rule name="{rule_name}"', shell=True, capture_output=True)
         logging.info(f"已移除防火墙规则: {rule_name}")
 
+
+def run_system_diagnostics():
+    """运行系统环境诊断"""
+    if platform.system() != 'Windows':
+        return "诊断功能仅支持 Windows 系统。"
+    
+    report = []
+    report.append(f"=== 系统环境诊断报告 ({time.strftime('%Y-%m-%d %H:%M:%S')}) ===")
+    
+    # 1. 主机名解析
+    try:
+        hostname = socket.gethostname()
+        report.append(f"\n[1. 主机名解析]")
+        report.append(f"计算机名: {hostname}")
+        
+        # Check IPv4
+        try:
+            ip4 = socket.gethostbyname(hostname)
+            suffix = ""
+            if ip4.startswith("127."):
+                suffix = "(优: 指向本地 - Hosts修改生效)"
+            elif ip4 == "127.0.0.1":
+                suffix = "(优: 指向本地 - Hosts修改生效)"
+            else:
+                suffix = "(指向局域网IP - 如连接失败请尝试一键修复)"
+            report.append(f"IPv4 解析: {ip4} {suffix}")
+        except Exception as e:
+            report.append(f"IPv4 解析失败: {e}")
+
+        # Check IPv6 preference
+        try:
+            addr_info = socket.getaddrinfo(hostname, None)
+            ips = [info[4][0] for info in addr_info]
+            ip_set = set(ips)
+            report.append(f"所有解析结果: {', '.join(ip_set)}")
+            if '::1' in ip_set:
+                 report.append("⚠️ 警告: 解析结果包含 IPv6 回环地址 (::1)。")
+                 report.append("   如果不强制 IPv4 (127.0.0.1)，Windows 可能优先尝试 IPv6 连接导致失败。")
+        except:
+            pass
+            
+    except Exception as e:
+        report.append(f"主机名检查出错: {e}")
+
+    # 2. 端口占用
+    report.append(f"\n[2. 端口 445 状态]")
+    try:
+        res = subprocess.run('netstat -ano | findstr :445', shell=True, capture_output=True, text=True)
+        if not res.stdout.strip():
+             report.append("端口 445 未被监听 (服务可能未启动)")
+        else:
+            lines = res.stdout.strip().splitlines()
+            found_listening = False
+            for line in lines:
+                if "LISTENING" in line:
+                    found_listening = True
+                    parts = line.split()
+                    pid = parts[-1]
+                    report.append(f"正在监听: {line.strip()}")
+                    if pid == "4":
+                        report.append("❌ 严重错误: 端口被 PID 4 (System) 占用！这是 Windows 系统内核驱动。")
+                        report.append("   解决方案: 请点击【一键修复环境】并务必【重启电脑】。")
+                    else:
+                        report.append(f"✅ 端口被 PID {pid} 占用 (正常情况下应为本程序)。")
+            if not found_listening:
+                 report.append("端口 445 似乎没有处于 LISTENING 状态。")
+    except Exception as e:
+        report.append(f"端口检查失败: {e}")
+
+    # 3. 关键服务状态
+    report.append(f"\n[3. 关键服务状态]")
+    services = {
+        'LanmanServer': 'Server (干扰项，应停止)',
+        'lmhosts': 'TCP/IP NetBIOS Helper (必需，应运行)',
+        'FDResPub': 'Function Discovery (WSD) (必需，应运行)'
+    }
+    
+    for svc, desc in services.items():
+        try:
+            res = subprocess.run(f'sc query {svc}', shell=True, capture_output=True, text=True)
+            # sc query output format: STATE : 4 RUNNING
+            if "RUNNING" in res.stdout:
+                state = "RUNNING"
+            elif "STOPPED" in res.stdout:
+                state = "STOPPED"
+            elif "PAUSED" in res.stdout:
+                state = "PAUSED"
+            else:
+                state = "未知/未安装"
+
+            status_icon = "❓"
+            if svc == 'LanmanServer':
+                status_icon = "✅" if state != 'RUNNING' else "❌" # Server 最好是 Stopped, 但有时候禁用状态查不到
+            else:
+                status_icon = "✅" if state == 'RUNNING' else "❌"
+                
+            report.append(f"{status_icon} {svc} ({desc}): {state}")
+        except Exception:
+             report.append(f"❓ {svc}: 检查失败")
+
+    # 4. 防火墙规则
+    report.append(f"\n[4. 防火墙规则]")
+    check_rule = "PythonSMBServer_Port445_TCP"
+    res = subprocess.run(f'netsh advfirewall firewall show rule name="{check_rule}"', shell=True, capture_output=True, text=True)
+    if not res.stdout.strip() or "没有与指定标准匹配的规则" in res.stdout:
+        report.append("❌ 未找到防火墙规则！请重新启动服务或点击修复。")
+    else:
+        # 简单检查是否有输出即可，详细解析比较繁琐
+        report.append("✅ 防火墙规则已存在。")
+        if "配置文件" in res.stdout and "任何" in res.stdout: 
+             report.append("   (配置: 覆盖所有网络配置文件)")
+        elif "Profiles" in res.stdout and "Any" in res.stdout:
+             report.append("   (Configuration: Covers all network profiles)")
+
+    # 5. Hosts 文件
+    report.append(f"\n[5. Hosts 文件检测]")
+    hosts_path = r"C:\Windows\System32\drivers\etc\hosts"
+    try:
+        content = ""
+        # 尝试读取
+        try:
+            with open(hosts_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            report.append("✅ 成功读取 Hosts 文件。")
+        except PermissionError:
+             report.append("❌ 权限不足，无法读取 Hosts 文件。")
+        except Exception as e:
+             report.append(f"读取 Hosts 文件出错: {e}")
+
+        if content:
+            if f"127.0.0.1       {hostname}" in content:
+                report.append(f"✅ 已包含本机重定向记录: 127.0.0.1 {hostname}")
+            else:
+                report.append(f"❌ 未找到本机重定向记录 (预期: 127.0.0.1 {hostname})。")
+                report.append("   解决方案: 点击【一键修复环境】。")
+    except Exception as e:
+        report.append(f"Hosts 检查逻辑错误: {e}")
+
+    report.append("\n=== 诊断结束 ===")
+    return "\n".join(report)

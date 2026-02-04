@@ -12,7 +12,7 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 
-from src.utils import get_local_ip, get_hostname, is_port_in_use, set_windows_startup, check_windows_startup, stop_windows_server_service, fix_port_445_environment, manage_firewall_rule
+from src.utils import get_local_ip, get_hostname, is_port_in_use, set_windows_startup, check_windows_startup, stop_windows_server_service, fix_port_445_environment, manage_firewall_rule, run_system_diagnostics
 
 # ... imports ...
 
@@ -119,6 +119,8 @@ class MainApp:
         ttk.Entry(port_frame, textvariable=self.port_var, width=10).pack(side=tk.LEFT, padx=5)
         ttk.Button(port_frame, text="检测是否占用", command=self.check_port).pack(side=tk.LEFT)
         ttk.Button(port_frame, text="一键修复环境 (推荐)", command=self.fix_environment_445).pack(side=tk.LEFT, padx=10)
+        # [v1.16] 诊断按钮
+        ttk.Button(port_frame, text="环境诊断", command=self.show_diagnostics).pack(side=tk.LEFT, padx=0)
 
         # 3. 控制与状态
         self.create_section_header(main_frame, "3. 服务控制")
@@ -197,6 +199,23 @@ class MainApp:
                 messagebox.showinfo("操作已提交", msg)
             else:
                 messagebox.showerror("操作失败", msg)
+
+    def show_diagnostics(self):
+        """显示系统环境诊断报告"""
+        report = run_system_diagnostics()
+        
+        # 创建弹窗显示报告
+        diag_win = tk.Toplevel(self.root)
+        diag_win.title("系统环境诊断报告")
+        diag_win.geometry("600x500")
+        
+        text_area = scrolledtext.ScrolledText(diag_win, width=80, height=30, font=('Consolas', 9))
+        text_area.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        text_area.insert(tk.END, report)
+        text_area.config(state=tk.DISABLED) # 只读
+        
+        ttk.Label(diag_win, text="请截图此报告发给开发者以排查问题", foreground="blue").pack(pady=5)
 
     def start_server(self):
         try:
