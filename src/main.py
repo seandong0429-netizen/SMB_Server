@@ -25,8 +25,8 @@ from src.version import VERSION
 class MainApp:
     def __init__(self, root):
         self.root = root
-        self.root.title(f"独立 SMB 服务端 (Windows/Mac) v{VERSION}")
-        self.root.geometry("600x750")
+        self.root.title(f"独立 SMB 服务端 v{VERSION}")
+        self.root.geometry("750x750")
         
         # 状态变量
         self.share_path = tk.StringVar()
