@@ -251,6 +251,16 @@ def fix_port_445_environment():
             subprocess.run("nbtstat -R", shell=True, capture_output=True)
             subprocess.run("nbtstat -RR", shell=True, capture_output=True)
             subprocess.run("nbtstat -RR", shell=True, capture_output=True)
+            subprocess.run("nbtstat -RR", shell=True, capture_output=True)
+
+            # 6. [NEW] 确保 NetBIOS Helper 和 Computer Browser 服务开启
+            # 停止了 Server 服务可能会影响 Browser，尝试强制开启 lmhosts (TCP/IP NetBIOS Helper)
+            # 这对计算机名解析至关重要
+            subprocess.run("sc config lmhosts start= auto", shell=True, capture_output=True)
+            subprocess.run("net start lmhosts /y", shell=True, capture_output=True)
+            
+            # Browser 服务通常依赖 Server 服务，如果 Server 被我们关了，Browser 也起不来
+            # 但我们还是尝试一下，或者至少保证 lmhosts 是活着的
 
             # 6. [NEW] 注册表优化: 允许别名访问 (DisableStrictNameChecking) 和 回环检查 (DisableLoopbackCheck)
             # 这对于通过计算机名访问非常关键
@@ -299,14 +309,21 @@ def manage_firewall_rule(action, port=445):
         subprocess.run(f'netsh advfirewall firewall delete rule name="{rule_name}"', shell=True, capture_output=True)
         subprocess.run(f'netsh advfirewall firewall delete rule name="{rule_name}_TCP"', shell=True, capture_output=True)
         subprocess.run(f'netsh advfirewall firewall delete rule name="{rule_name}_UDP"', shell=True, capture_output=True)
-        # 添加新规则 (TCP 445)
-        cmd_tcp = f'netsh advfirewall firewall add rule name="{rule_name}_TCP" dir=in action=allow protocol=TCP localport={port}'
+        subprocess.run(f'netsh advfirewall firewall delete rule name="{rule_name}_ICMP"', shell=True, capture_output=True)
+        # 添加新规则 (TCP 445 + 139) - 139 是 NetBIOS Session，虽然 Impacket 主要用 445，但旧系统可能探测
+        # profile=any 确保在公用/专用网络下都生效
+        cmd_tcp = f'netsh advfirewall firewall add rule name="{rule_name}_TCP" dir=in action=allow protocol=TCP localport="445,139" profile=any'
+        
         # 添加 UDP 覆盖 (UDP 445, 137, 138, 5355) 增强发现
         # 5355 is LLMNR (Link-Local Multicast Name Resolution) - vital for hostname with no DNS
-        cmd_udp = f'netsh advfirewall firewall add rule name="{rule_name}_UDP" dir=in action=allow protocol=UDP localport="445,137,138,5355"'
+        cmd_udp = f'netsh advfirewall firewall add rule name="{rule_name}_UDP" dir=in action=allow protocol=UDP localport="445,137,138,5355" profile=any'
         
+        # [NEW] 允许 ICMP (Ping) - 有助于网络发现
+        cmd_icmp = f'netsh advfirewall firewall add rule name="{rule_name}_ICMP" dir=in action=allow protocol=icmpv4:8,any profile=any'
+
         res_tcp = subprocess.run(cmd_tcp, shell=True, capture_output=True, text=True)
         res_udp = subprocess.run(cmd_udp, shell=True, capture_output=True, text=True)
+        res_icmp = subprocess.run(cmd_icmp, shell=True, capture_output=True, text=True)
         
         if res_tcp.returncode != 0:
             logging.error(f"添加防火墙规则(TCP)失败: {res_tcp.stderr}")
