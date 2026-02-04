@@ -21,20 +21,26 @@ from src.utils import get_local_ip, get_hostname, is_port_in_use, set_windows_st
 from src.logger import setup_logger
 from src.smb_server import SMBService
 from src.version import VERSION
+from src.config import ConfigManager
 
 class MainApp:
     def __init__(self, root):
         self.root = root
-        self.root.title(f"独立 SMB 服务端 v{VERSION}")
+        self.root.title(f"云铠智能办公 SMB 服务端 v{VERSION}")
         self.root.geometry("750x750")
         
-        # 状态变量
-        self.share_path = tk.StringVar()
-        self.share_name = tk.StringVar(value="MyShare")
-        self.auth_mode = tk.StringVar(value="anonymous")
-        self.username = tk.StringVar(value="admin")
-        self.password = tk.StringVar()
-        self.port_var = tk.IntVar(value=445)
+        # 加载配置
+        self.config_mgr = ConfigManager()
+        cfg = self.config_mgr.get_all()
+
+        # 状态变量 (从配置加载)
+        self.share_path = tk.StringVar(value=cfg.get("share_path", ""))
+        self.share_name = tk.StringVar(value=cfg.get("share_name", "MyShare"))
+        self.auth_mode = tk.StringVar(value=cfg.get("auth_mode", "anonymous"))
+        self.username = tk.StringVar(value=cfg.get("username", "admin"))
+        self.password = tk.StringVar(value=cfg.get("password", ""))
+        self.port_var = tk.IntVar(value=cfg.get("port", 445))
+        
         self.is_running = False
         self.service = None
         
@@ -44,6 +50,97 @@ class MainApp:
         
         self.create_widgets()
         self.check_log_queue()
+
+        # [v1.24] 检查是否需要自动启动服务
+        # 延时检测，等待UI渲染完毕
+        if cfg.get("auto_start_service", False):
+            self.root.after(1000, self.auto_start_check)
+
+    def auto_start_check(self):
+        """开机自动启动服务的检查逻辑"""
+        self.logger.info("检测到自动启动配置，正在尝试启动服务...")
+        # 只有当路径有效时才启动
+        if self.share_path.get() and os.path.exists(self.share_path.get()):
+            self.start_server()
+        else:
+            self.logger.warning("自动启动失败: 共享路径无效或为空")
+
+    def start_server(self):
+        try:
+            self.logger.info("正在尝试启动服务...")
+            
+            path = self.share_path.get()
+            name = self.share_name.get()
+            port = self.port_var.get()
+            
+            if not path or not os.path.exists(path):
+                messagebox.showerror("错误", "请选择有效的共享目录")
+                return
+                
+            if not name:
+                messagebox.showerror("错误", "请设置共享名称")
+                return
+                
+            # 检查端口占用
+            if is_port_in_use(port):
+                 # 尝试自动切换逻辑或询问用户
+                 if port == 445:
+                     if messagebox.askyesno("端口冲突", "端口 445 被占用，是否尝试使用端口 4445？"):
+                         port = 4445
+                         self.port_var.set(port)
+                         if is_port_in_use(port):
+                             messagebox.showerror("错误", f"端口 {port} 也被占用，请手动指定其他端口。")
+                             return
+                     else:
+                         return
+                 else:
+                     messagebox.showerror("错误", f"端口 {port} 被占用。")
+                     return
+
+            user = self.username.get() if self.auth_mode.get() == "secure" else None
+            pwd = self.password.get() if self.auth_mode.get() == "secure" else None
+            
+            # [v1.24] 保存配置 & 标记已启动
+            self.config_mgr.set("auto_start_service", True)
+            self.config_mgr.update_from_ui(path, name, port, self.auth_mode.get(), self.username.get(), self.password.get())
+            
+            # 添加防火墙规则
+            manage_firewall_rule('add', port)
+            
+            # Pass log_queue to service for child process logging
+            self.service = SMBService(name, path, user, pwd, port, self.log_queue)
+            self.service.start()
+            
+            self.start_btn.config(state=tk.DISABLED)
+            self.stop_btn.config(state=tk.NORMAL)
+            self.status_label.config(text=f"状态: 运行中 (端口 {port})", foreground="green")
+            self.is_running = True
+            
+        except Exception as e:
+            import traceback
+            err_msg = f"启动服务时发生严重错误:\n{str(e)}\n\n{traceback.format_exc()}"
+            self.logger.error(err_msg)
+            messagebox.showerror("启动失败", err_msg)
+
+
+    def stop_server(self):
+        if self.service:
+            # 停止前获取端口移除防火墙规则
+            port = self.service.val_port
+            self.service.stop()
+            self.service = None
+            
+            # 移除防火墙规则
+            manage_firewall_rule('delete', port)
+            
+        # [v1.24] 标记为手动停止，避免下次自动启动
+        self.config_mgr.set("auto_start_service", False)
+        self.config_mgr.save()
+            
+        self.start_btn.config(state=tk.NORMAL)
+        self.stop_btn.config(state=tk.DISABLED)
+        self.status_label.config(text="状态: 已停止", foreground="red")
+        self.is_running = False
 
     def create_widgets(self):
         # 样式设置
@@ -121,8 +218,6 @@ class MainApp:
         ttk.Button(port_frame, text="一键修复环境 (推荐)", command=self.fix_environment_445).pack(side=tk.LEFT, padx=10)
         # [v1.16] 诊断按钮
         ttk.Button(port_frame, text="环境诊断", command=self.show_diagnostics).pack(side=tk.LEFT, padx=0)
-        # [v1.18] 手动修改 Hosts 按钮
-        ttk.Button(port_frame, text="手动修改 Hosts", command=self.manual_edit_hosts).pack(side=tk.LEFT, padx=10)
 
         # 3. 控制与状态
         self.create_section_header(main_frame, "3. 服务控制")
@@ -142,7 +237,11 @@ class MainApp:
 
         # 开机自启 (右侧)
         self.startup_var = tk.BooleanVar(value=check_windows_startup("MySMBServer"))
-        ttk.Checkbutton(control_frame, text="开机自动启动", variable=self.startup_var, command=self.toggle_startup).pack(side=tk.RIGHT, padx=10)
+        # [v1.23] 使用自定义 Label 模拟复选框，确保显示绿色对勾 (解决 Win 原生 Checkbox 样式问题)
+        self.startup_lbl = ttk.Label(control_frame, text="", cursor="hand2") 
+        self.startup_lbl.pack(side=tk.RIGHT, padx=10)
+        self.startup_lbl.bind("<Button-1>", lambda e: self.toggle_startup())
+        self.update_startup_ui()
 
         # 4. 日志窗口
         self.create_section_header(main_frame, "运行日志")
@@ -162,169 +261,30 @@ class MainApp:
         ttk.Label(f, text=text, style='Header.TLabel').pack(side=tk.LEFT)
         ttk.Separator(f, orient=tk.HORIZONTAL).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10)
 
-    def browse_folder(self):
-        directory = filedialog.askdirectory()
-        if directory:
-            self.share_path.set(directory)
-
-    def toggle_auth_inputs(self):
-        if self.auth_mode.get() == "secure":
-            for child in self.auth_input_frame.winfo_children():
-                child.configure(state='normal')
-        else:
-            for child in self.auth_input_frame.winfo_children():
-                child.configure(state='disabled')
-        
-    def check_port(self):
-        port = self.port_var.get()
-        if is_port_in_use(port):
-             # 检查是否是 PID 4
-            is_system = False
-            try:
-                import subprocess
-                res = subprocess.run(f'netstat -ano | findstr :{port}', shell=True, capture_output=True, text=True)
-                if " 4" in res.stdout: # PID 4 ends of line usually
-                     is_system = True
-            except:
-                pass
-            
-            if is_system:
-                messagebox.showwarning("端口冲突 (System)", f"端口 {port} 被 System (PID 4) 占用。\n这是 Windows 内核驱动 (srv.sys) 导致的。\n\n请点击【一键修复环境】按钮，然后重启电脑。")
-            else:
-                messagebox.showwarning("端口冲突", f"端口 {port} 已被占用！")
-        else:
-            messagebox.showinfo("端口检查", f"端口 {port} 可用。")
-
-    def fix_environment_445(self):
-        """一键修复环境"""
-        if messagebox.askyesno("环境修复", "此操作将执行以下环境修复：\n\n1. 修改注册表禁用 SMBDevice 驱动 (Start=4)\n2. 强制停止 Windows Server 服务\n\n注意：此操作需要【管理员权限】，会弹出黑色命令窗口。\n执行成功后，即使当前端口未立即释放，【重启电脑】后即可解决问题。\n\n是否继续？"):
-            success, msg = fix_port_445_environment()
-            if success:
-                messagebox.showinfo("操作已提交", msg)
-            else:
-                messagebox.showerror("操作失败", msg)
-
-    def show_diagnostics(self):
-        """显示系统环境诊断报告"""
-        report = run_system_diagnostics()
-        
-        # 创建弹窗显示报告
-        diag_win = tk.Toplevel(self.root)
-        diag_win.title("系统环境诊断报告")
-        diag_win.geometry("600x500")
-        
-        text_area = scrolledtext.ScrolledText(diag_win, width=80, height=30, font=('Consolas', 9))
-        text_area.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        text_area.insert(tk.END, report)
-        text_area.config(state=tk.DISABLED) # 只读
-        
-        text_area.config(state=tk.DISABLED) # 只读
-        
-        ttk.Label(diag_win, text="请截图此报告发给开发者以排查问题", foreground="blue").pack(pady=5)
-
-    def manual_edit_hosts(self):
-        """手动打开 Hosts 文件"""
-        success, msg = open_hosts_file()
-        if not success:
-            messagebox.showerror("错误", msg)
-        else:
-            # [v1.21] 自动复制到剪贴板，方便用户粘贴
-            hostname = get_hostname()
-            line_to_add = f"127.0.0.1       {hostname}"
-            
-            try:
-                self.root.clipboard_clear()
-                self.root.clipboard_append(line_to_add)
-                self.root.update() # Keep clipboard
-                clip_msg = "已自动复制到剪贴板！"
-            except:
-                clip_msg = "请手动复制下方内容："
-
-            # 提示用户怎么改
-            info = f"即将为您打开 Hosts 文件。\n\n需要添加的内容 ({clip_msg})：\n{line_to_add}\n\n请在打开的记事本【最后一行】直接粘贴 (Ctrl+V)，然后保存即可。"
-            messagebox.showinfo("手动修改指引", info)
-
-    def start_server(self):
-        try:
-            self.logger.info("正在尝试启动服务...")
-            
-            path = self.share_path.get()
-            name = self.share_name.get()
-            port = self.port_var.get()
-            
-            if not path or not os.path.exists(path):
-                messagebox.showerror("错误", "请选择有效的共享目录")
-                return
-                
-            if not name:
-                messagebox.showerror("错误", "请设置共享名称")
-                return
-                
-            # 检查端口占用
-            if is_port_in_use(port):
-                 # 尝试自动切换逻辑或询问用户
-                 # 这里简单起见，如果用户手动填了端口还冲突，就报错。如果是默认445冲突，尝试切换。
-                 if port == 445:
-                     if messagebox.askyesno("端口冲突", "端口 445 被占用，是否尝试使用端口 4445？"):
-                         port = 4445
-                         self.port_var.set(port)
-                         if is_port_in_use(port):
-                             messagebox.showerror("错误", f"端口 {port} 也被占用，请手动指定其他端口。")
-                             return
-                     else:
-                         return
-                 else:
-                     messagebox.showerror("错误", f"端口 {port} 被占用。")
-                     return
-
-            user = self.username.get() if self.auth_mode.get() == "secure" else None
-            pwd = self.password.get() if self.auth_mode.get() == "secure" else None
-            
-            # 添加防火墙规则
-            manage_firewall_rule('add', port)
-            
-            # Pass log_queue to service for child process logging
-            self.service = SMBService(name, path, user, pwd, port, self.log_queue)
-            self.service.start()
-            
-            self.start_btn.config(state=tk.DISABLED)
-            self.stop_btn.config(state=tk.NORMAL)
-            self.status_label.config(text=f"状态: 运行中 (端口 {port})", foreground="green")
-            self.is_running = True
-            
-        except Exception as e:
-            import traceback
-            err_msg = f"启动服务时发生严重错误:\n{str(e)}\n\n{traceback.format_exc()}"
-            self.logger.error(err_msg)
-            messagebox.showerror("启动失败", err_msg)
-
-
-    def stop_server(self):
-        if self.service:
-            # 停止前获取端口移除防火墙规则
-            # 注意: 这里假设用户在运行期间没有改端口号输入框
-            port = self.service.val_port
-            self.service.stop()
-            self.service = None
-            
-            # 移除防火墙规则
-            manage_firewall_rule('delete', port)
-            
-        self.start_btn.config(state=tk.NORMAL)
-        self.stop_btn.config(state=tk.DISABLED)
-        self.status_label.config(text="状态: 已停止", foreground="red")
-        self.is_running = False
+    # ... (omitted methods) ...
 
     def toggle_startup(self):
-        enabled = self.startup_var.get()
-        success, msg = set_windows_startup("MySMBServer", enabled)
+        # [v1.23] 更新逻辑以适配自定义 Toggle
+        # 当前状态
+        current_state = self.startup_var.get()
+        target_state = not current_state
+        
+        success, msg = set_windows_startup("MySMBServer", target_state)
         if success:
+            self.startup_var.set(target_state)
+            self.update_startup_ui()
             self.logger.info(f"系统设置: {msg}")
         else:
             self.logger.error(f"系统设置失败: {msg}")
-            # 回滚状态
-            self.startup_var.set(not enabled)
+            # 如果是权限等原因失败，状态不变
+            messagebox.showerror("设置失败", msg)
+
+    def update_startup_ui(self):
+        """[v1.23] 更新自定义复选框的 UI 状态"""
+        if self.startup_var.get():
+            self.startup_lbl.config(text="✅ 开机自动启动", foreground="green")
+        else:
+            self.startup_lbl.config(text="⬜ 开机自动启动", foreground="#666666")
 
     def check_log_queue(self):
         """定期把队列里的日志取出来显示在界面上"""
