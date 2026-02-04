@@ -167,15 +167,19 @@ class MainApp:
         self.startup_lbl.bind("<Button-1>", lambda e: self.toggle_startup())
         self.update_startup_ui()
 
+        # 底部提示 (优先 Pack 底部，防止被日志挤出)
+        local_ip = get_local_ip()
+        hostname = get_hostname()
+        
+        footer_frame = ttk.Frame(main_frame)
+        footer_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=5)
+        ttk.Label(footer_frame, text=f"访问地址: \\\\{local_ip}   (或 \\\\{hostname})", 
+                 font=('Microsoft YaHei UI', 10, 'bold'), foreground="#0056b3").pack()
+
         # 4. 日志窗口
         self.create_section_header(main_frame, "运行日志")
         self.log_area = scrolledtext.ScrolledText(main_frame, height=15, state='disabled', font=('Consolas', 9))
         self.log_area.pack(fill=tk.BOTH, expand=True, pady=5)
-        
-        # 底部提示
-        local_ip = get_local_ip()
-        # [v1.27] 仅显示局域网访问
-        ttk.Label(main_frame, text=f"局域网访问: \\\\{local_ip}").pack(side=tk.BOTTOM, pady=5)
 
     def create_section_header(self, parent, text):
         f = ttk.Frame(parent)
