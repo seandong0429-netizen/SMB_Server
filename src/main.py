@@ -13,7 +13,7 @@ import pystray
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 
-from src.utils import get_local_ip, get_hostname, is_port_in_use, set_windows_startup, check_windows_startup, stop_windows_server_service, fix_port_445_environment, manage_firewall_rule, run_system_diagnostics, open_hosts_file, run_as_admin
+from src.utils import get_local_ip, get_hostname, is_port_in_use, set_windows_startup, check_windows_startup, stop_windows_server_service, fix_port_445_environment, manage_firewall_rule, run_system_diagnostics, open_hosts_file
 from src.logger import setup_logger
 from src.smb_server import SMBService
 from src.version import VERSION
