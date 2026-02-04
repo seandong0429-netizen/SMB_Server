@@ -48,13 +48,24 @@ class MainApp:
     def create_widgets(self):
         # 样式设置
         style = ttk.Style()
-        style.theme_use('clam')  # 使用 clam 主题获得更现代的外观
-        style.configure('TFrame', background='#f0f0f0')
-        style.configure('TLabel', background='#f0f0f0', font=('Arial', 10))
-        style.configure('TButton', font=('Arial', 10))
-        style.configure('Header.TLabel', font=('Arial', 12, 'bold'))
+        style.theme_use('clam')
         
-        self.root.configure(bg='#f0f0f0')
+        # 定义颜色和字体
+        bg_color = '#ffffff'
+        fg_color = '#333333'
+        main_font = ('Microsoft YaHei UI', 9)
+        header_font = ('Microsoft YaHei UI', 11, 'bold')
+        
+        style.configure('TFrame', background=bg_color)
+        style.configure('TLabel', background=bg_color, foreground=fg_color, font=main_font)
+        style.configure('TButton', font=main_font)
+        style.configure('Header.TLabel', font=header_font, background=bg_color, foreground=fg_color)
+        style.configure('TLabelframe', background=bg_color, foreground=fg_color)
+        style.configure('TLabelframe.Label', background=bg_color, foreground=fg_color, font=main_font)
+        style.configure('TRadiobutton', background=bg_color, foreground=fg_color, font=main_font)
+        style.configure('TCheckbutton', background=bg_color, foreground=fg_color, font=main_font)
+        
+        self.root.configure(bg=bg_color)
         
         # 主容器
         main_frame = ttk.Frame(self.root, padding="20")
@@ -81,16 +92,22 @@ class MainApp:
         auth_frame = ttk.Labelframe(main_frame, text="认证模式", padding=10)
         auth_frame.pack(fill=tk.X, pady=5)
         
-        ttk.Radiobutton(auth_frame, text="匿名访问 (无需密码)", variable=self.auth_mode, value="anonymous", command=self.toggle_auth_inputs).pack(anchor=tk.W)
-        ttk.Radiobutton(auth_frame, text="安全模式 (用户名/密码)", variable=self.auth_mode, value="secure", command=self.toggle_auth_inputs).pack(anchor=tk.W)
+        # 第一行：匿名访问
+        ttk.Radiobutton(auth_frame, text="匿名访问 (无需密码)", variable=self.auth_mode, value="anonymous", command=self.toggle_auth_inputs).pack(anchor=tk.W, pady=2)
         
-        self.auth_input_frame = ttk.Frame(auth_frame)
-        self.auth_input_frame.pack(fill=tk.X, pady=5, padx=20)
+        # 第二行：安全模式 + 输入框
+        secure_frame = ttk.Frame(auth_frame)
+        secure_frame.pack(fill=tk.X, pady=2, anchor=tk.W)
+        
+        ttk.Radiobutton(secure_frame, text="安全模式", variable=self.auth_mode, value="secure", command=self.toggle_auth_inputs).pack(side=tk.LEFT)
+        
+        self.auth_input_frame = ttk.Frame(secure_frame)
+        self.auth_input_frame.pack(side=tk.LEFT, padx=10)
         
         ttk.Label(self.auth_input_frame, text="用户:").pack(side=tk.LEFT)
-        ttk.Entry(self.auth_input_frame, textvariable=self.username, width=15).pack(side=tk.LEFT, padx=5)
+        ttk.Entry(self.auth_input_frame, textvariable=self.username, width=12).pack(side=tk.LEFT, padx=5)
         ttk.Label(self.auth_input_frame, text="密码:").pack(side=tk.LEFT)
-        ttk.Entry(self.auth_input_frame, textvariable=self.password, show="*", width=15).pack(side=tk.LEFT, padx=5)
+        ttk.Entry(self.auth_input_frame, textvariable=self.password, show="*", width=12).pack(side=tk.LEFT, padx=5)
         
         # 初始状态隐藏输入框
         self.toggle_auth_inputs()
@@ -109,13 +126,14 @@ class MainApp:
         control_frame = ttk.Frame(main_frame)
         control_frame.pack(fill=tk.X, pady=10)
         
-        self.start_btn = ttk.Button(control_frame, text="启动服务", command=self.start_server, width=20)
-        self.start_btn.pack(side=tk.LEFT, padx=10)
+        # 加大按钮 Padding
+        self.start_btn = ttk.Button(control_frame, text="启动服务", command=self.start_server, width=15)
+        self.start_btn.pack(side=tk.LEFT, padx=10, ipady=5)
         
-        self.stop_btn = ttk.Button(control_frame, text="停止服务", command=self.stop_server, width=20, state=tk.DISABLED)
-        self.stop_btn.pack(side=tk.LEFT, padx=10)
+        self.stop_btn = ttk.Button(control_frame, text="停止服务", command=self.stop_server, width=15, state=tk.DISABLED)
+        self.stop_btn.pack(side=tk.LEFT, padx=10, ipady=5)
         
-        self.status_label = ttk.Label(control_frame, text="状态: 未运行", foreground="red")
+        self.status_label = ttk.Label(control_frame, text="状态: 未运行", foreground="#d9534f") # Bootstrap danger red
         self.status_label.pack(side=tk.LEFT, padx=10)
 
         # 开机自启 (右侧)
@@ -124,10 +142,9 @@ class MainApp:
 
         # 4. 日志窗口
         self.create_section_header(main_frame, "运行日志")
-        self.log_area = scrolledtext.ScrolledText(main_frame, height=15, state='disabled', font=('Courier', 9))
+        self.log_area = scrolledtext.ScrolledText(main_frame, height=15, state='disabled', font=('Consolas', 9))
         self.log_area.pack(fill=tk.BOTH, expand=True, pady=5)
         
-
         # 底部提示
         local_ip = get_local_ip()
         hostname = get_hostname()
