@@ -44,7 +44,7 @@ def generate_license(expire_date_str, version="PRO"):
     """
     # 1. Prepare Data
     data = {
-        "ExpiryDate": expire_date_str,
+        "ActivationDeadline": expire_date_str,
         "Version": version,
         "GeneratedAt": datetime.datetime.now().isoformat()
     }
@@ -75,12 +75,12 @@ def generate_license(expire_date_str, version="PRO"):
     with open("license.lic", "w") as f:
         f.write(license_content)
     
-    print(f"✅ Success! Generated license.lic valid until {expire_date_str}")
+    print(f"✅ Success! Generated license.lic. Activation valid until {expire_date_str}")
     print(f"Content Preview: {license_content[:50]}...")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="SMB Server License Generator")
-    parser.add_argument("date", help="Expiration Date (YYYY-MM-DD)")
+    parser.add_argument("date", help="Activation Deadline (YYYY-MM-DD)")
     args = parser.parse_args()
     
     try:
