@@ -115,65 +115,67 @@ class SMBService:
         self.password = password
         self.val_port = port 
         self.log_queue = log_queue
-        self.process = None
+        # [v2.2] 支持多进程 (监听多个端口)
+        self.processes = [] 
         self.logger = logging.getLogger('SMBServer')
 
-    def start(self):
-        """启动 SMB 服务进程"""
-        if self.process and self.process.is_alive():
+    def start(self, legacy_mode=False):
+        """启动 SMB 服务进程 (支持多端口)"""
+        if self.processes:
             self.logger.warning("服务已经在运行中")
             return
 
-        self.logger.info(f"正在启动服务进程 (端口 {self.val_port})...")
-        
-        # 使用 multiprocessing 启动
-        self.process = multiprocessing.Process(
-            target=run_smb_server_process,
-            args=(self.share_name, self.share_path, self.username, self.password, self.val_port, self.log_queue),
-            daemon=True
-        )
-        self.process.start()
-        
-        # 检查进程 whether immediately died (e.g. import error, bind error)
-        # Give it a moment to initialize
-        time.sleep(1)
-        if not self.process.is_alive():
-            exit_code = self.process.exitcode
-            self.logger.error(f"服务进程启动失败，立即退出 (Exit Code: {exit_code})。请检查上方日志详情。")
-            self.process = None
-            return
+        ports_to_listen = [self.val_port]
+        if legacy_mode:
+            ports_to_listen.append(139)
 
         local_ip = get_local_ip()
         hostname = get_hostname()
-        self.logger.info(f"服务进程已启动 (PID: {self.process.pid})")
+
+        for p in ports_to_listen:
+            self.logger.info(f"正在启动服务进程 (端口 {p})...")
+            
+            # 使用 multiprocessing 启动
+            proc = multiprocessing.Process(
+                target=run_smb_server_process,
+                args=(self.share_name, self.share_path, self.username, self.password, p, self.log_queue),
+                daemon=True
+            )
+            proc.start()
+            self.processes.append(proc)
+            
+            # 简单检查
+            time.sleep(0.5)
+            if not proc.is_alive():
+                self.logger.error(f"端口 {p} 的服务进程启动失败 (Exit Code: {proc.exitcode})")
+                # 不阻断其他端口尝试
+
+        self.logger.info(f"服务启动尝试完成")
         self.logger.info(f"主机名: {hostname}")
-        self.logger.info(f"监听地址: {local_ip}:{self.val_port}")
+        self.logger.info(f"监听端口: {verbs_ports(ports_to_listen)}")
         self.logger.info(f"共享路径: {self.share_name} -> {self.share_path}")
 
+def verbs_ports(ports):
+    return ", ".join(str(p) for p in ports)
+
     def stop(self):
-        """停止服务"""
-        if not self.process:
+        """停止所有服务进程"""
+        if not self.processes:
             return
 
-        self.logger.info("正在停止服务进程...")
+        self.logger.info("正在停止所有服务进程...")
         
-        if self.process.is_alive():
-            # 强制终止进程 - 这是使用 multiprocessing 的主要优势
-            # 可以立即释放端口，不需要等待 socket 超时
-            self.process.terminate()
-            self.process.join(timeout=2) # 等待进程结束
-            
-            if self.process.is_alive():
-                 self.logger.warning("进程未响应，正在强制 Kill...")
-                 self.process.kill() # 更加暴力的 Kill
-            
-            # 再次确保完全回收
-            self.process.join(timeout=1)
-            self.logger.info("服务进程已终止")
-        else:
-            self.logger.info("服务进程此前已结束")
-            
-        self.process = None
+        for proc in self.processes:
+            if proc.is_alive():
+                proc.terminate()
+                proc.join(timeout=1)
+                if proc.is_alive():
+                    self.logger.warning(f"进程 {proc.pid} 未响应，强制 Kill...")
+                    proc.kill()
+                    proc.join(timeout=0.5)
+        
+        self.processes = []
+        self.logger.info("服务已全部停止")
 
     def check_port_conflict(self, preferred_port=445, fallback_port=4445):
         """检查端口冲突并返回可用端口"""

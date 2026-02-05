@@ -28,7 +28,8 @@ class ConfigManager:
             "auth_mode": "anonymous",
             "username": "admin",
             "password": "",
-            "auto_start_service": False
+            "auto_start_service": False,
+            "legacy_mode": False
         }
 
     def load(self):
@@ -58,11 +59,12 @@ class ConfigManager:
     def get_all(self):
         return self.config
 
-    def update_from_ui(self, share_path, share_name, port, auth_mode, username, password):
+    def update_from_ui(self, share_path, share_name, port, auth_mode, username, password, legacy_mode=False):
         self.config["share_path"] = share_path
         self.config["share_name"] = share_name
         self.config["port"] = port
         self.config["auth_mode"] = auth_mode
         self.config["username"] = username
         self.config["password"] = password
+        self.config["legacy_mode"] = legacy_mode
         self.save()

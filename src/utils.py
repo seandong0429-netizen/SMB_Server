@@ -208,6 +208,10 @@ def fix_port_445_environment():
         commands.append('reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanServer\\Parameters" /v DisableStrictNameChecking /t REG_DWORD /d 1 /f')
         commands.append('reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa" /v DisableLoopbackCheck /t REG_DWORD /d 1 /f')
         commands.append('reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters" /v AllowInsecureGuestAuth /t REG_DWORD /d 1 /f')
+        # [v2.2] 强制 NetBT 广播模式 (NodeType=1)
+        commands.append('reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\Netbt\\Parameters" /v NodeType /t REG_DWORD /d 1 /f')
+        
+        # [v2.2] 强制 NetBIOS 重广播
         commands.append('nbtstat -RR')
         commands.append('ipconfig /flushdns')
 
@@ -324,6 +328,19 @@ def fix_port_445_environment():
             # 这让电脑能在"网络"邻居里被发现 (WSD协议)
             subprocess.run("sc config FDResPub start= auto", shell=True, capture_output=True)
             subprocess.run("net start FDResPub /y", shell=True, capture_output=True)
+            
+            # [v2.2] 注册表: 强制 NodeType=1 (Broadcast)
+            try:
+                key_netbt = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                                           r"SYSTEM\CurrentControlSet\Services\Netbt\Parameters", 
+                                           0, winreg.KEY_SET_VALUE)
+                winreg.SetValueEx(key_netbt, "NodeType", 0, winreg.REG_DWORD, 1)
+                winreg.CloseKey(key_netbt)
+            except Exception:
+                subprocess.run('reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\Netbt\\Parameters" /v NodeType /t REG_DWORD /d 1 /f', shell=True, capture_output=True)
+
+            # [v2.2] 再次刷新 NetBIOS
+            subprocess.run("nbtstat -RR", shell=True, capture_output=True)
             
             # Browser 服务通常依赖 Server 服务，如果 Server 被我们关了，Browser 也起不来
             # 但我们还是尝试一下，或者至少保证 lmhosts 是活着的
@@ -479,41 +496,59 @@ def run_system_diagnostics():
                  report.append("   如果不强制 IPv4 (127.0.0.1)，Windows 可能优先尝试 IPv6 连接导致失败。")
         except:
             pass
+
+        # [v2.2] 检查 NetBT NodeType
+        try:
+             import winreg
+             key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services\Netbt\Parameters", 0, winreg.KEY_READ)
+             node_type, _ = winreg.QueryValueEx(key, "NodeType")
+             winreg.CloseKey(key)
+             
+             if node_type == 1:
+                 report.append("✅ NetBIOS 节点类型: Broadcast (1) - 已优化")
+             else:
+                 report.append(f"⚠️ NetBIOS 节点类型: {node_type} (建议: Broadcast=1)")
+        except Exception:
+             report.append("⚠️ NetBIOS 节点类型: 未设置或无法读取 (默认可能是 Hybrid)")
             
     except Exception as e:
         report.append(f"主机名检查出错: {e}")
 
-    # 2. 端口占用
-    report.append(f"\n[2. 端口 445 状态]")
-    try:
-        res = subprocess.run('netstat -ano | findstr :445', shell=True, capture_output=True, text=True)
-        if not res.stdout.strip():
-             report.append("端口 445 未被监听 (服务可能未启动)")
-        else:
-            lines = res.stdout.strip().splitlines()
-            found_listening = False
-            for line in lines:
-                if "LISTENING" in line:
-                    found_listening = True
-                    parts = line.split()
-                    pid = parts[-1]
-                    report.append(f"正在监听: {line.strip()}")
-                    if pid == "4":
-                        report.append("❌ 严重错误: 端口被 PID 4 (System) 占用！这是 Windows 系统内核驱动。")
-                        report.append("   解决方案: 请点击【一键修复环境】并务必【重启电脑】。")
-                    else:
-                        report.append(f"✅ 端口被 PID {pid} 占用 (正常情况下应为本程序)。")
-            if not found_listening:
-                 report.append("端口 445 似乎没有处于 LISTENING 状态。")
-    except Exception as e:
-        report.append(f"端口检查失败: {e}")
+    # 2. 端口占用 (445 & 139)
+    report.append(f"\n[2. 端口状态]")
+    for check_port in [445, 139]:
+        try:
+            res = subprocess.run(f'netstat -ano | findstr :{check_port}', shell=True, capture_output=True, text=True)
+            if not res.stdout.strip():
+                 report.append(f"端口 {check_port} 未被监听")
+            else:
+                lines = res.stdout.strip().splitlines()
+                found_listening = False
+                for line in lines:
+                    if "LISTENING" in line:
+                        found_listening = True
+                        parts = line.split()
+                        pid = parts[-1]
+                        report.append(f"[{check_port}] 正在监听: {line.strip()}")
+                        if pid == "4":
+                            if check_port == 445:
+                                report.append(f"❌ 严重错误: 端口 {check_port} 被 System (PID 4) 占用！")
+                            else:
+                                report.append(f"⚠️ 注意: 端口 {check_port} 被 System (PID 4) 占用 (通常是 NetBIOS Session)。\n   如果开启兼容模式失败，可能需要禁用 NetBIOS over TCP/IP 或依赖系统本身。")
+                        else:
+                            report.append(f"✅ 端口 {check_port} 被 PID {pid} 占用 (正常)。")
+                if not found_listening:
+                     report.append(f"端口 {check_port} 似乎没有处于 LISTENING 状态。")
+        except Exception as e:
+            report.append(f"端口 {check_port} 检查失败: {e}")
 
     # 3. 关键服务状态
     report.append(f"\n[3. 关键服务状态]")
     services = {
         'LanmanServer': 'Server (干扰项，应停止)',
         'lmhosts': 'TCP/IP NetBIOS Helper (必需，应运行)',
-        'FDResPub': 'Function Discovery (WSD) (必需，应运行)'
+        'FDResPub': 'Function Discovery (WSD) (必需，应运行)',
+        'SSDPSRV': 'SSDP Discovery (WSD依赖) (必需，应运行)'
     }
     
     for svc, desc in services.items():

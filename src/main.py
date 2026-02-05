@@ -18,19 +18,15 @@ from src.logger import setup_logger
 from src.smb_server import SMBService
 from src.version import VERSION
 from src.config import ConfigManager
-from src.license_manager import license_manager
+
 
 class MainApp:
     def __init__(self, root):
         self.root = root
         
-        # [v2.0] License 启动校验
-        valid, msg, meta = license_manager.verify()
-        if not valid:
-            messagebox.showerror("授权失败", f"程序无法启动: {msg}")
-            sys.exit(1)
+
         
-        self.root.title(f"云铠智能办公 SMB 服务端 v{VERSION} (Licensed)")
+        self.root.title(f"云铠智能办公 SMB 服务端 v{VERSION}")
         self.root.geometry("750x750")
         
         # [v1.26] 拦截关闭事件 -> 最小化到托盘
@@ -49,6 +45,7 @@ class MainApp:
         self.username = tk.StringVar(value=cfg.get("username", "admin"))
         self.password = tk.StringVar(value=cfg.get("password", ""))
         self.port_var = tk.IntVar(value=cfg.get("port", 445))
+        self.legacy_mode_var = tk.BooleanVar(value=cfg.get("legacy_mode", False))
         
         self.is_running = False
         self.service = None
@@ -150,6 +147,12 @@ class MainApp:
         ttk.Button(port_frame, text="一键修复环境 (推荐)", command=self.fix_environment_445).pack(side=tk.LEFT, padx=10)
         # [v1.16] 诊断按钮
         ttk.Button(port_frame, text="环境诊断", command=self.show_diagnostics).pack(side=tk.LEFT, padx=0)
+
+        # [v2.2] 兼容模式 Checkbox
+        legacy_frame = ttk.Frame(main_frame)
+        legacy_frame.pack(fill=tk.X, pady=(0, 10))
+        ttk.Checkbutton(legacy_frame, text="兼容模式 (开启 Port 139 + 强制广播)", variable=self.legacy_mode_var).pack(side=tk.LEFT, padx=5)
+        ttk.Label(legacy_frame, text="(解决复印机/旧设备通过计算机名无法访问的问题)", font=('Microsoft YaHei UI', 8), foreground='#666666').pack(side=tk.LEFT)
 
         # 3. 控制与状态
         self.create_section_header(main_frame, "3. 服务控制")
@@ -262,7 +265,9 @@ class MainApp:
             
             path = self.share_path.get()
             name = self.share_name.get()
+            name = self.share_name.get()
             port = self.port_var.get()
+            legacy = self.legacy_mode_var.get()
             
             if not path or not os.path.exists(path):
                 messagebox.showerror("错误", "请选择有效的共享目录")
@@ -286,21 +291,27 @@ class MainApp:
                          return
                  else:
                      messagebox.showerror("错误", f"端口 {port} 被占用。")
+                     messagebox.showerror("错误", f"端口 {port} 被占用。")
                      return
+
+            # [v2.2] 检查 139 端口占用
+            if legacy:
+                if is_port_in_use(139):
+                     messagebox.showwarning("端口 139 冲突", "端口 139 被占用 (可能是系统 NetBIOS Session)。\n这可能会影响兼容模式，但我们将继续尝试启动。\n建议先点击【一键修复环境】。")
 
             user = self.username.get() if self.auth_mode.get() == "secure" else None
             pwd = self.password.get() if self.auth_mode.get() == "secure" else None
             
             # [v1.24] 保存配置 & 标记已启动
             self.config_mgr.set("auto_start_service", True)
-            self.config_mgr.update_from_ui(path, name, port, self.auth_mode.get(), self.username.get(), self.password.get())
+            self.config_mgr.update_from_ui(path, name, port, self.auth_mode.get(), self.username.get(), self.password.get(), legacy)
             
-            # 添加防火墙规则
+            # 添加防火墙规则 (manage_firewall_rule 已在 utils 中配置为开启 139)
             manage_firewall_rule('add', port)
             
             # Pass log_queue to service for child process logging
             self.service = SMBService(name, path, user, pwd, port, self.log_queue)
-            self.service.start()
+            self.service.start(legacy_mode=legacy)
             
             self.start_btn.config(state=tk.DISABLED)
             self.stop_btn.config(state=tk.NORMAL)
@@ -423,8 +434,7 @@ class MainApp:
         if self.tray_icon:
             self.tray_icon.stop()
             
-        # [v2.0] 更新运行锚点 (记录最后运行时间)
-        license_manager.update_anchor()
+
         
         self.root.quit()
         sys.exit(0)
