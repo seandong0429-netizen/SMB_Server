@@ -148,11 +148,12 @@ class MainApp:
         # [v1.16] 诊断按钮
         ttk.Button(port_frame, text="环境诊断", command=self.show_diagnostics).pack(side=tk.LEFT, padx=0)
 
-        # [v2.2] 兼容模式 Checkbox
-        legacy_frame = ttk.Frame(main_frame)
+        # [v2.2] 兼容模式 Checkbox (Advanced Settings)
+        legacy_frame = ttk.LabelFrame(main_frame, text="高级兼容性设置", padding=10)
         legacy_frame.pack(fill=tk.X, pady=(0, 10))
-        ttk.Checkbutton(legacy_frame, text="兼容模式 (开启 Port 139 + 强制广播)", variable=self.legacy_mode_var).pack(side=tk.LEFT, padx=5)
-        ttk.Label(legacy_frame, text="(解决复印机/旧设备通过计算机名无法访问的问题)", font=('Microsoft YaHei UI', 8), foreground='#666666').pack(side=tk.LEFT)
+        
+        ttk.Checkbutton(legacy_frame, text="开启兼容模式 (Port 139 + NetBIOS)", variable=self.legacy_mode_var).pack(side=tk.LEFT, padx=5)
+        ttk.Label(legacy_frame, text="(适用于复印机/旧版 Windows)", font=('Microsoft YaHei UI', 8), foreground='#666666').pack(side=tk.LEFT, padx=5)
 
         # 3. 控制与状态
         self.create_section_header(main_frame, "3. 服务控制")

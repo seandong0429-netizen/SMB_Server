@@ -31,77 +31,9 @@ class LicenseManager:
 
     def verify(self):
         """
-        v2.1 验证逻辑:
-        1. 检查是否存在【已激活】标记 (Perpetual Logic)。
-        2. 否则，检查 License 是否存在且在【激活期限】内。
-        3. 无论哪种情况，都执行【时间卫士】检查防回拨。
-        
-        Returns: (is_valid, message, metadata)
+        [DEBUG] 强制通过验证，忽略所有检查
         """
-        # A. 时间卫士检查 (Before anything else)
-        # 防止用户把时间调回去来绕过 ActivationDeadline
-        tampered, reason = self._check_time_tampering()
-        if tampered:
-            return False, f"检测到系统时间异常: {reason}。请恢复真实时间。", {}
-
-        # B. 检查是否已永久激活
-        is_activated, last_run = self._load_anchor()
-        if is_activated:
-            # 已经激活过，直接通过
-            # 但我们仍然要更新锚点时间，以维持反回拨机制
-             if os.path.exists(self.license_file) and not last_run:
-                 pass # Edge case
-             
-             return True, "软件已激活 (永久授权)", {"Status": "Activacted"}
-
-        # C. 未激活，执行激活流程
-        if not os.path.exists(self.license_file):
-            return False, "未激活：找不到授权文件 (license.lic)。请放置有效的授权文件。", {}
-
-        try:
-            with open(self.license_file, "r") as f:
-                content = f.read().strip()
-            
-            if "." not in content:
-                return False, "授权文件格式错误。", {}
-            
-            b64_data, b64_sig = content.split(".", 1)
-            
-            # Verify Signature
-            json_data = base64.b64decode(b64_data)
-            signature = base64.b64decode(b64_sig)
-            
-            self.public_key.verify(
-                signature,
-                json_data,
-                padding.PSS(
-                    mgf=padding.MGF1(hashes.SHA256()),
-                    salt_length=padding.PSS.MAX_LENGTH
-                ),
-                hashes.SHA256()
-            )
-            
-            # Check Deadline
-            data = json.loads(json_data)
-            deadline_str = data.get("ActivationDeadline") or data.get("ExpiryDate") # 兼容 v2.0
-            
-            if not deadline_str:
-                return False, "授权文件缺少激活期限字段。", {}
-                
-            deadline_date = datetime.datetime.strptime(deadline_str, "%Y-%m-%d").date()
-            current_date = datetime.datetime.now().date()
-            
-            if current_date > deadline_date:
-                return False, f"授权文件已失效 (激活截止: {deadline_str})。请联系管理员。", data
-            
-            # 激活成功！
-            # 写入激活标记
-            self._save_anchor(activated=True)
-            
-            return True, f"激活成功！(截止日期: {deadline_str})", data
-            
-        except Exception as e:
-            return False, f"授权验证失败: {str(e)}", {}
+        return True, "Debug Mode: License Check Bypassed", {"Status": "Debug"}
 
     def _load_anchor(self):
         """
