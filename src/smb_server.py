@@ -13,14 +13,33 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
     """在独立进程中运行 SMB 服务"""
     
     # 配置子进程日志
-    # [v1.38] 捕获所有日志 (包括 impacket 的连接日志) 到主界面
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
+    # [v1.39] 全局日志钩子: 强行捕获 Impacket 的所有输出
     q_handler = QueueHandler(log_queue)
-    root_logger.addHandler(q_handler)
+    formatter = logging.Formatter('%(asctime)s - %(message)s', datefmt='%H:%M:%S')
+    q_handler.setFormatter(formatter)
+
+    # 1. 根 Logger (捕获所有未捕获的)
+    root_logger = logging.getLogger()
+    # 必须设为 DEBUG，否则 info 以下的日志会被过滤
+    root_logger.setLevel(logging.DEBUG) 
+    if not root_logger.handlers:
+        root_logger.addHandler(q_handler)
     
-    # 专门获取 SMBServer 用于我们自己的打印
+    # 2. Impacket 专用 Logger (核心)
+    # Impacket 使用 'impacket' 作为 logger name
+    impacket_logger = logging.getLogger('impacket')
+    impacket_logger.setLevel(logging.DEBUG) # 开启 DEBUG级别以显示更多握手细节
+    # 确保他不重复
+    impacket_logger.handlers = [] 
+    impacket_logger.addHandler(q_handler)
+    impacket_logger.propagate = False # 防止重复上报给 root
+
+    # 3. 我们的 SMBServer logger
     logger = logging.getLogger('SMBServer')
+    logger.setLevel(logging.INFO)
+    logger.handlers = []
+    logger.addHandler(q_handler)
+    logger.propagate = False
     
     try:
         logger.info(f"正在初始化 SMB 服务 (PID: {os.getpid()})...")
