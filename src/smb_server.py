@@ -147,29 +147,15 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
             logger.warning(f"绑定 IPv6 失败 ({e})，回退到 IPv4 (0.0.0.0)")
             server = smbserver.SimpleSMBServer(listenAddress='0.0.0.0', listenPort=port)
             
-        # [v1.43] 实例级 Monkey Patch: 对生成的 server 对象直接动手术
-        # 避免 Class 为了继承关系导致 Patch 失效
+        # [v1.44] 实例级 Monkey Patch: 针对内部的真实 TCPServer 对象
+        # SimpleSMBServer 只是 facade，真正的 TCP Server 是 _SMBServer__server
         try:
-            # 1. 保存原方法
-            old_verify = server.verify_request
-            old_process = server.process_request
-            
-            # 2. 定义新方法 (Bound Method)
-            def new_verify(request, client_address):
-                print(f"[conn] 收到连接请求: {client_address}")
-                return old_verify(request, client_address)
-            
-            def new_process(request, client_address):
-                print(f"[proc] 处理请求: {client_address}")
-                return old_process(request, client_address)
-                
-            # 3. 替换实例方法
-            server.verify_request = new_verify
-            server.process_request = new_process
-            
-            print("[INIT] 实例级监控钩子挂载完成")
+            # 先尝试获取内部的 TCPServer 对象
+            # 注意: SimpleSMBServer 在调用 addShare 之前可能还没初始化 __server
+            # 所以我们延迟到 start 调用之前再 patch
+            pass # 延迟到 start 之前
         except Exception as e:
-            print(f"[ERROR] 实例钩子挂载失败: {e}")
+            print(f"[ERROR] 预检失败: {e}")
 
         # 添加共享文件夹
         server.addShare(share_name, share_path, shareComment='SMB Share')
@@ -187,6 +173,26 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
             server.setSMBChallenge('')
 
         logger.info("SMB 服务准备就绪，开始监听...")
+        
+        # [v1.44] 在 start 之前对内部 TCPServer 挂载监控钩子
+        # SimpleSMBServer 用 name mangling 隐藏了 __server，我们用 _SMBServer__server 访问
+        try:
+            internal_server = server._SMBServer__server
+            print(f"[INIT] 找到内部 TCPServer: {type(internal_server)}")
+            
+            # 保存原方法
+            old_process = internal_server.process_request
+            
+            # 定义新方法
+            def logged_process(request, client_address):
+                print(f"[CONN] 新连接: {client_address}")
+                return old_process(request, client_address)
+            
+            # 替换
+            internal_server.process_request = logged_process
+            print("[INIT] 内部 TCPServer 监控钩子挂载成功")
+        except Exception as e:
+            print(f"[ERROR] 内部钩子挂载失败: {e}")
         
         # 启动服务
         server.start()
