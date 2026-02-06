@@ -73,8 +73,7 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
         log_queue.put("[DIAG] Step 2: impacket 导入成功")
         
         import signal
-        from src.license_manager import license_manager
-        log_queue.put("[DIAG] Step 3: license_manager 导入成功")
+        log_queue.put("[DIAG] Step 3: 各模块导入成功")
         
         # [v1.42] Monkey Patch: 暴力注入监控钩子 (增强版)
         # 改用 print (已被重定向) 并增加 process_request 钩子
@@ -96,17 +95,6 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
             log_queue.put("[DIAG] Step 4: MONITOR 钩子注入成功")
         except Exception as e:
             log_queue.put(f"[ERROR] MONITOR 钩子注入失败: {e}")
-
-
-        # [v1.45] 心跳和额外监控移到下面单独处理
-
-        # [v2.0] Double-check License in child process
-        log_queue.put("[DIAG] Step 5: 开始验证 License...")
-        valid, msg, _ = license_manager.verify()
-        if not valid:
-            log_queue.put(f"[FATAL] License 验证失败: {msg}")
-            sys.exit(1)
-        log_queue.put("[DIAG] Step 6: License 验证通过")
 
 
         
