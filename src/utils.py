@@ -313,6 +313,16 @@ def fix_port_445_environment():
             subprocess.run("nbtstat -RR", shell=True, capture_output=True)
             subprocess.run("nbtstat -RR", shell=True, capture_output=True)
             subprocess.run("nbtstat -RR", shell=True, capture_output=True)
+            subprocess.run("nbtstat -RR", shell=True, capture_output=True)
+
+            # [v2.3] 强力操作: 禁用网卡上的 "File and Printer Sharing" 绑定 (ms_server)
+            # 这能彻底释放 Port 139/445 而不需要禁用整个 NetBIOS
+            # 需要 PowerShell 并且管理员权限
+            try:
+                ps_unbind_cmd = 'Get-NetAdapter | Disable-NetAdapterBinding -ComponentID ms_server -PassThru'
+                subprocess.run(f'powershell -Command "{ps_unbind_cmd}"', shell=True, capture_output=True)
+            except Exception as e:
+                print(f"尝试禁用 ms_server 绑定失败: {e}")
 
             # 6. [NEW] 确保 NetBIOS Helper 和 Computer Browser 服务开启
             # 停止了 Server 服务可能会影响 Browser，尝试强制开启 lmhosts (TCP/IP NetBIOS Helper)
@@ -397,7 +407,7 @@ def fix_port_445_environment():
         except Exception:
             pass
         
-        return True, "环境修复完成 (强力模式)。\n\n已执行：\n1. 禁用 srv2, srvnet 服务\n2. 注册表禁用 SMBDevice, srv2, srvnet 驱动\n3. 停止相关服务\n\n请务必【重启电脑】以确保生效。"
+        return True, "环境修复完成 (强力模式)。\n\n已执行：\n1. 禁用网卡上的【文件和打印机共享】绑定 (释放端口 139)\n2. 禁用 srv2, srvnet 服务\n3. 注册表禁用 SMBDevice 驱动\n\n请务必【重启电脑】以确保生效。"
 
 
 
@@ -536,7 +546,7 @@ def run_system_diagnostics():
                             else:
                                 report.append(f"❌ 关键冲突: 端口 {check_port} 被 System (PID 4) 占用。")
                                 report.append("   【重要】这会导致复印机无法通过计算机名访问！")
-                                report.append("   解决方案: 请在网卡属性中取消勾选【Microsoft 网络文件和打印机共享】。")
+                                report.append("   解决方案: 请运行【一键修复】。\n   或者手动: 打开【网络连接(ncpa.cpl)】-> 右键网卡 -> 属性 -> 取消勾选【Microsoft 网络文件和打印机共享】。")
                         else:
                             report.append(f"✅ 端口 {check_port} 被 PID {pid} 占用 (正常)。")
                 if not found_listening:
