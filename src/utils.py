@@ -194,7 +194,7 @@ def fix_port_445_environment():
             
         # 3. Net Stop
         # 顺序很重要，先停依赖项
-        for svc in ['srv2', 'srvnet', 'server']:
+        for svc in ['srv2', 'srvnet', 'server', 'NetBT']:
             commands.append(f'net stop {svc} /y')
 
         # 4. [v1.17] 启动关键依赖服务 (WSD, NetBIOS)
@@ -305,7 +305,9 @@ def fix_port_445_environment():
             subprocess.run(f"sc config {svc} start= disabled", shell=True, capture_output=True)
 
         # 3. 停止服务
-        for svc in ['srv2', 'srvnet', 'server']:
+        # [v1.34] 显式停止 NetBT (NetBIOS over TCP/IP) 驱动服务
+        # 这是 PID 4 占用 Port 139 的根源
+        for svc in ['srv2', 'srvnet', 'server', 'NetBT']:
             subprocess.run(f"net stop {svc} /y", shell=True, capture_output=True)
 
         # 4. 额外增强: 直接使用 SC 禁用服务 (防止注册表修改失败)
