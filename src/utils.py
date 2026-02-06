@@ -364,8 +364,36 @@ def fix_port_445_environment():
             # [v2.2] 再次刷新 NetBIOS
             subprocess.run("nbtstat -RR", shell=True, capture_output=True)
             
-            # Browser 服务通常依赖 Server 服务，如果 Server 被我们关了，Browser 也起不来
-            # 但我们还是尝试一下，或者至少保证 lmhosts 是活着的
+            # [v2.4] 核弹级修复: 遍历注册表强制禁用所有网卡的 NetBIOS
+            # 等同于在 TCP/IP 高级设置中选择 "禁用 NetBIOS over TCP/IP"
+            try:
+                netbt_interfaces_path = r"SYSTEM\CurrentControlSet\Services\Netbt\Parameters\Interfaces"
+                try:
+                    key_interfaces = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, netbt_interfaces_path, 0, winreg.KEY_READ)
+                    num_subkeys = winreg.QueryInfoKey(key_interfaces)[0]
+                    
+                    print(f"正在扫描 {num_subkeys} 个网络接口配置...")
+                    
+                    for i in range(num_subkeys):
+                        subkey_name = winreg.EnumKey(key_interfaces, i)
+                        full_subkey_path = f"{netbt_interfaces_path}\\{subkey_name}"
+                        
+                        try:
+                            # 打开子键 (Write 权限)
+                            key_sub = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, full_subkey_path, 0, winreg.KEY_SET_VALUE)
+                            # NetbiosOptions: 0=Default, 1=Enable, 2=Disable
+                            winreg.SetValueEx(key_sub, "NetbiosOptions", 0, winreg.REG_DWORD, 2)
+                            winreg.CloseKey(key_sub)
+                            print(f"  - 接口 {subkey_name}: 已强制禁用 NetBIOS (Option=2)")
+                        except Exception as e:
+                             print(f"  - 接口 {subkey_name} 设置失败: {e}")
+                             
+                    winreg.CloseKey(key_interfaces)
+                    
+                except FileNotFoundError:
+                    print("未找到 Netbt 接口注册表路径，跳过。")
+            except Exception as e:
+                print(f"全局禁用 NetBIOS 失败: {e}")
 
             # 6. [NEW] 注册表优化: 允许别名访问 (DisableStrictNameChecking) 和 回环检查 (DisableLoopbackCheck)
             # 这对于通过计算机名访问非常关键
@@ -419,7 +447,7 @@ def fix_port_445_environment():
         except Exception:
             pass
         
-        return True, "环境修复完成 (强力模式)。\n\n已执行：\n1. 禁用网卡上的【文件和打印机共享】绑定 (释放端口 139)\n2. 禁用 srv2, srvnet 服务\n3. 注册表禁用 SMBDevice 驱动\n\n请务必【重启电脑】以确保生效。"
+        return True, "环境修复完成 (强力模式)。\n\n已执行：\n1.全局注册表强制禁用 NetBIOS (释放端口 139)\n2. 禁用网卡上的【文件和打印机共享】绑定\n3. 禁用 srv2, srvnet 服务\n\n请务必【重启电脑】以确保生效。"
 
 
 
