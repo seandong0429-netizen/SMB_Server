@@ -62,12 +62,30 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
         test_imp = logging.getLogger('impacket')
         test_imp.info("系统自检: Impacket 日志通道已挂载")
 
+        if sys.stderr:
+            sys.stderr.write("系统自检: Impacket 日志通道已挂载\n")
+
         # 延迟导入 impacket，以便捕获 ImportError
         # 在打包环境中，如果缺少 hidden import，这里会抛出异常，现在可以被 log 捕获了
         from impacket import smbserver
         from impacket.ntlm import compute_lmhash, compute_nthash
         import signal
         from src.license_manager import license_manager
+        
+        # [v1.41] Monkey Patch: 暴力注入监控钩子
+        # 无论日志系统是否生效，只要底层收到 socket 连接请求，这里都会被触发
+        try:
+            original_verify_request = smbserver.SMBSERVER.verify_request
+            
+            def my_verify_request(self, request, client_address):
+                # 直接使用 root logger 避免被过滤
+                logging.getLogger().info(f"[MONITOR] 收到底层连接请求: {client_address}")
+                return original_verify_request(self, request, client_address)
+            
+            smbserver.SMBSERVER.verify_request = my_verify_request
+            logging.getLogger().info("[MONITOR] 监控钩子注入成功")
+        except Exception as e:
+            logger.error(f"[MONITOR] 钩子注入失败: {e}")
 
         # [v2.0] Double-check License in child process
         valid, msg, _ = license_manager.verify()
