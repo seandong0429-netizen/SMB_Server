@@ -127,26 +127,50 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
             # 我们通过 sys.exit() ? 不，这会导致 finally 块执行
             sys.exit(0)
 
-        signal.signal(signal.SIGTERM, signal_handler)
-        signal.signal(signal.SIGINT, signal_handler)
-
-        logger.info("已开启端口重用 (allow_reuse_address=True)")
+        # [v1.43] 心跳检测: 开启！每 10 秒心跳，确认日志存活
+        def heartbeat_log():
+            while True:
+                time.sleep(10)
+                try:
+                    # 直接打印，走 stdout 重定向
+                    print(f"[HEARTBEAT] 服务进程存活检测 (PID: {os.getpid()})")
+                except:
+                    break
+        import threading
+        threading.Thread(target=heartbeat_log, daemon=True).start()
 
         try:
-            # [v1.22] 尝试优先绑定 IPv6 (::) 以支持双栈 (如果系统支持)
-            # 现代 Windows 的 localhost 经常解析为 ::1，如果只监听 IPv4 会导致 connection refused
+            # [v1.22] 尝试优先绑定 IPv6 (::) 以支持双栈
             server = smbserver.SimpleSMBServer(listenAddress='::', listenPort=port)
             logger.info("已绑定 IPv6 双栈接口 (::)")
         except Exception as e:
             logger.warning(f"绑定 IPv6 失败 ({e})，回退到 IPv4 (0.0.0.0)")
             server = smbserver.SimpleSMBServer(listenAddress='0.0.0.0', listenPort=port)
             
-        # [v1.14] 显式设置服务端名称，防止 NTLM 身份验证时的目标名称不匹配SimpleSMBServer object has no attribute 'setServerName'
-        # 我们暂时不仅是用此方法，而是依赖 hosts 文件和注册表
-        # real_hostname = get_hostname()
-        # if real_hostname:
-        #     server.setServerName(real_hostname)
-        
+        # [v1.43] 实例级 Monkey Patch: 对生成的 server 对象直接动手术
+        # 避免 Class 为了继承关系导致 Patch 失效
+        try:
+            # 1. 保存原方法
+            old_verify = server.verify_request
+            old_process = server.process_request
+            
+            # 2. 定义新方法 (Bound Method)
+            def new_verify(request, client_address):
+                print(f"[conn] 收到连接请求: {client_address}")
+                return old_verify(request, client_address)
+            
+            def new_process(request, client_address):
+                print(f"[proc] 处理请求: {client_address}")
+                return old_process(request, client_address)
+                
+            # 3. 替换实例方法
+            server.verify_request = new_verify
+            server.process_request = new_process
+            
+            print("[INIT] 实例级监控钩子挂载完成")
+        except Exception as e:
+            print(f"[ERROR] 实例钩子挂载失败: {e}")
+
         # 添加共享文件夹
         server.addShare(share_name, share_path, shareComment='SMB Share')
         
