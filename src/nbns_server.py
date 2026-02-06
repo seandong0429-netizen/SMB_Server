@@ -84,39 +84,41 @@ def run_nbns_server(log_queue):
                     continue
 
                 # Decode Name
-                # Each 2 nibbles -> 1 char. 'A' is added to each nibble.
-                # e.g. 'C' (0x43) -> 0x4+0x41='E', 0x3+0x41='D' -> "ED"
                 decoded_name = ""
-                for i in range(0, 32, 2):
-                    char_code = ((encoded_name[i] - 0x41) << 4) | (encoded_name[i+1] - 0x41)
-                    decoded_name += chr(char_code)
+                try:
+                    for i in range(0, 32, 2):
+                        char_code = ((encoded_name[i] - 0x41) << 4) | (encoded_name[i+1] - 0x41)
+                        decoded_name += chr(char_code)
+                except:
+                    continue
                 
                 # Trim spaces and check suffix
-                query_name_raw = decoded_name.strip()
-                # The 16th byte is the suffix (service type). 00=Workstation, 20=Server
-                # We usually ignore suffix for simple hostname matching or match typical ones
-                
-                # Just match the string part against our hostname
+                # The 16th byte is the suffix (service type).
                 query_pure_name = decoded_name[:15].strip()
+                suffix = ord(decoded_name[15]) if len(decoded_name) > 15 else 0
+
+                # 调试日志: 记录收到的所有请求
+                logger.debug(f"NBNS Query: {query_pure_name}<{suffix:02x}> from {addr[0]}")
                 
+                # 简单匹配: 忽略后缀，只要名字对就行 (00=Workstation, 20=Server)
                 if query_pure_name == hostname:
-                    logger.info(f"收到解析请求: {query_pure_name} 来自 {addr[0]} -> 响应 {local_ip}")
+                    logger.info(f"收到解析请求: {query_pure_name}<{suffix:02x}> 来自 {addr[0]} -> 响应 {local_ip}")
                     
                     # Construct Response
                     # Header
                     # TID: echo
-                    # Flags: Response(1) | Opcode(0) | AA(1) | RD(0) | RA(0) | B(0) | RCODE(0)
-                    # 0x8000 | 0x0400 (AA) = 0x8400
-                    # QDCOUNT=0 (Common practice to not return question in response? Or 1? RFC says echo)
-                    # Let's echo question. QD=1, AN=1
+                    # Flags: Response(1) | Opcode(0) | AA(1) | TC(0) | RD(1) | RA(0) | B(0) | RCODE(0)
+                    # 0x8500 = 1000 0101 0000 0000
                     
-                    resp_flags = 0x8500 # Response + Authoritative + Recursion Desired (copy)
+                    # [Fix] 如果请求是广播 (Flags B=1?)
+                    # RFC 1002: Header Flags bit 4 is B.
+                    # 但在这里我们作为 NBNS Server 响应，通常 Unicast 回应即可。
+                    # 有些老设备希望看到我们声称是 "Unique Name" (Flags 0x0000 in Resource Record)
                     
-                    resp_header = struct.pack('!HHHHHH', tid, resp_flags, 0, 1, 0, 0)
-                    # Note: Putting 0 questions to keep it simple, Wireshark usually accepts just Answer
+                    resp_flags = 0x8500 
                     
-                    # But RFC 1002 says "The response contains the question name in the question section"
-                    # Let's echo header QDCOUNT=1
+                    # Echo Header
+                    # QDCOUNT=1, ANCOUNT=1
                     resp_header = struct.pack('!HHHHHH', tid, resp_flags, 1, 1, 0, 0)
                     
                     # Question Section (Echo)
@@ -126,26 +128,28 @@ def run_nbns_server(log_queue):
                     # Name (Pointer to question name: 0xC000 | offset 12) = 0xC00C
                     # Type (NB=0x20)
                     # Class (IN=1)
-                    # TTL (32-bit)
-                    # RDLENGTH (16-bit) = 6 (Flags(2) + IP(4))
-                    # RDATA:
-                    #   Flags (2 bytes): 0x0000 (B-node, Unique) or 0x6000 (H-node) ? 
-                    #   0x0000 = Unicast
-                    #   IP (4 bytes)
+                    # TTL (300s)
+                    # RDLENGTH (6 bytes: 2 flags + 4 IP)
                     
-                    # Check local_ip
+                    # RDATA Flags: 
+                    # 0x0000 = Unique Name, B-node
+                    # 0x6000 = Group Name? No. 
+                    # 我们声明自己是 Unique Name
+                    
                     ip_parts = [int(x) for x in local_ip.split('.')]
                     ip_bytes = struct.pack('!BBBB', *ip_parts)
                     
-                    ans_header = struct.pack('!HHHLH', 0x0020, 0x0001, 300, 6) # Type 20, Class 1, TTL 300, Len 6
-                    ans_data = struct.pack('!H', 0x0000) + ip_bytes # Flags 0, IP
+                    ans_header = struct.pack('!HHHLH', 0x0020, 0x0001, 300, 6) 
+                    ans_data = struct.pack('!H', 0x0000) + ip_bytes 
                     
-                    # Name in answer: Pointer corresponding to 0xC000 + 12 (offset of query name)
-                    # Wait, if we construct packet from scratch
-                    
+                    # Pointer Name (0xC00C)
                     response = resp_header + q_section + struct.pack('!H', 0xC00C) + ans_header + ans_data
                     
                     sock.sendto(response, addr)
+                else:
+                    # 如果开启了详细调试，可以记录不匹配的
+                    # logger.info(f"忽略请求: {query_pure_name} (本机: {hostname})")
+                    pass
             
             except Exception as e:
                 # Parsing error
