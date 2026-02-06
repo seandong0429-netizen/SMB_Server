@@ -320,6 +320,16 @@ def fix_port_445_environment():
             subprocess.run("nbtstat -RR", shell=True, capture_output=True)
             subprocess.run("nbtstat -RR", shell=True, capture_output=True)
             subprocess.run("nbtstat -RR", shell=True, capture_output=True)
+            subprocess.run("nbtstat -RR", shell=True, capture_output=True)
+
+            # [v2.3 Fix] 强力操作: 禁用网卡上的 "File and Printer Sharing" 绑定 (ms_server)
+            # 这能彻底释放 Port 139/445 而不需要禁用整个 NetBIOS
+            # 需要 PowerShell 并且管理员权限
+            try:
+                ps_unbind_cmd = 'Get-NetAdapter | Disable-NetAdapterBinding -ComponentID ms_server -PassThru'
+                subprocess.run(f'powershell -Command "{ps_unbind_cmd}"', shell=True, capture_output=True)
+            except Exception as e:
+                print(f"尝试禁用 ms_server 绑定失败: {e}")
 
             # [v2.3] 强力操作: 禁用网卡上的 "File and Printer Sharing" 绑定 (ms_server)
             # 这能彻底释放 Port 139/445 而不需要禁用整个 NetBIOS
