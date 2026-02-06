@@ -6,6 +6,7 @@ import sys
 import os
 from src.utils import get_local_ip, get_hostname
 from src.logger import QueueHandler
+from src.nbns_server import run_nbns_server
 
 # 独立的进程函数，避免 Pickling 问题
 def run_smb_server_process(share_name, share_path, username, password, port, log_queue):
@@ -143,6 +144,19 @@ class SMBService:
             )
             proc.start()
             self.processes.append(proc)
+            
+            # [v1.35] 如果启用了兼容模式 (legacy_mode)，我们除了监听端口 139，
+            # 还需要启动 NBNS 服务 (UDP 137) 来替代被禁用的 Windows NetBT 服务
+            # 这样复印机才能通过 computer name 找到我们
+            if legacy_mode and p == 139:
+                self.logger.info("正在启动内置 NBNS 名称解析服务 (UDP 137)...")
+                nbns_proc = multiprocessing.Process(
+                    target=run_nbns_server,
+                    args=(self.log_queue,),
+                    daemon=True
+                )
+                nbns_proc.start()
+                self.processes.append(nbns_proc)
             
             # 简单检查
             time.sleep(0.5)
