@@ -75,20 +75,19 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
         import signal
         log_queue.put("[DIAG] Step 3: 各模块导入成功")
         
-        # [v1.42] Monkey Patch: 暴力注入监控钩子 (增强版)
-        # 改用 print (已被重定向) 并增加 process_request 钩子
+        # [v1.48] Monkey Patch: 改回 print() 因为 v1.44 证明它工作
         try:
             # Hook 1: verify_request (连接建立前)
             original_verify_request = smbserver.SMBSERVER.verify_request
             def my_verify_request(self, request, client_address):
-                log_queue.put(f"[CONN] 连接请求: {client_address}")
+                print(f"[CONN] 连接请求: {client_address}")
                 return original_verify_request(self, request, client_address)
             smbserver.SMBSERVER.verify_request = my_verify_request
             
             # Hook 2: process_request (处理请求)
             original_process_request = smbserver.SMBSERVER.process_request
             def my_process_request(self, request, client_address):
-                log_queue.put(f"[PROC] 处理请求: {client_address}")
+                print(f"[PROC] 处理请求: {client_address}")
                 return original_process_request(self, request, client_address)
             smbserver.SMBSERVER.process_request = my_process_request
 
@@ -109,21 +108,20 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
 
         signal.signal(signal.SIGTERM, signal_handler)
         signal.signal(signal.SIGINT, signal_handler)
-        log_queue.put("[DIAG] Step 7: 信号处理器设置完成")
+        log_queue.put("[DIAG] Step 5: 信号处理器设置完成")
 
-        # [v1.45] 心跳检测: 使用 log_queue.put 直接发送，绕过所有中间层
+        # [v1.48] 心跳检测: 使用 print() 走 stdout 重定向，避免闭包问题
         def heartbeat_log():
             import datetime
             while True:
-                time.sleep(5)  # 5秒一次心跳，方便快速验证
+                time.sleep(5)
                 try:
-                    timestamp = datetime.datetime.now().strftime('%H:%M:%S')
-                    log_queue.put(f"{timestamp} - [HEARTBEAT] 服务进程存活 (PID: {os.getpid()})")
+                    print(f"[HEARTBEAT] 服务进程存活 (PID: {os.getpid()})")
                 except:
                     break
         import threading
         threading.Thread(target=heartbeat_log, daemon=True).start()
-        log_queue.put("[DIAG] Step 8: 心跳线程已启动")
+        log_queue.put("[DIAG] Step 6: 心跳线程已启动")
 
         try:
             # [v1.22] 尝试优先绑定 IPv6 (::) 以支持双栈
