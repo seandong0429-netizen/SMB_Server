@@ -67,10 +67,14 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
 
         # 延迟导入 impacket，以便捕获 ImportError
         # 在打包环境中，如果缺少 hidden import，这里会抛出异常，现在可以被 log 捕获了
+        log_queue.put("[DIAG] Step 1: 开始导入 impacket...")
         from impacket import smbserver
         from impacket.ntlm import compute_lmhash, compute_nthash
+        log_queue.put("[DIAG] Step 2: impacket 导入成功")
+        
         import signal
         from src.license_manager import license_manager
+        log_queue.put("[DIAG] Step 3: license_manager 导入成功")
         
         # [v1.42] Monkey Patch: 暴力注入监控钩子 (增强版)
         # 改用 print (已被重定向) 并增加 process_request 钩子
@@ -78,29 +82,31 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
             # Hook 1: verify_request (连接建立前)
             original_verify_request = smbserver.SMBSERVER.verify_request
             def my_verify_request(self, request, client_address):
-                print(f"[MONITOR] 连接建立请求 (verify): {client_address}")
+                log_queue.put(f"[CONN] 连接请求: {client_address}")
                 return original_verify_request(self, request, client_address)
             smbserver.SMBSERVER.verify_request = my_verify_request
             
             # Hook 2: process_request (处理请求)
             original_process_request = smbserver.SMBSERVER.process_request
             def my_process_request(self, request, client_address):
-                print(f"[MONITOR] 开始处理请求 (process): {client_address}")
+                log_queue.put(f"[PROC] 处理请求: {client_address}")
                 return original_process_request(self, request, client_address)
             smbserver.SMBSERVER.process_request = my_process_request
 
-            print("[MONITOR] 双重监控钩子注入成功 (verify + process)")
+            log_queue.put("[DIAG] Step 4: MONITOR 钩子注入成功")
         except Exception as e:
-            logger.error(f"[MONITOR] 钩子注入失败: {e}")
+            log_queue.put(f"[ERROR] MONITOR 钩子注入失败: {e}")
 
 
         # [v1.45] 心跳和额外监控移到下面单独处理
 
         # [v2.0] Double-check License in child process
+        log_queue.put("[DIAG] Step 5: 开始验证 License...")
         valid, msg, _ = license_manager.verify()
         if not valid:
-            logger.error(f"[FATAL] License Validation Failed: {msg}")
+            log_queue.put(f"[FATAL] License 验证失败: {msg}")
             sys.exit(1)
+        log_queue.put("[DIAG] Step 6: License 验证通过")
 
 
         
@@ -110,15 +116,12 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
 
         # 定义优雅关闭的信号处理
         def signal_handler(signum, frame):
-            logger.info(f"接收到终止信号 ({signum})，正在关闭 SMB 服务...")
-            # 由于 server.start() 是阻塞的，我们需要在另一个线程或回调中关闭
-            # 但在这里，我们可以抛出异常或者调用 server 停止方法 如果 server 是全局的
-            # 这是一个难点。SimpleSMBServer.start() 是死循环。
-            # 我们通过 sys.exit() ? 不，这会导致 finally 块执行
+            log_queue.put(f"接收到终止信号 ({signum})，正在关闭 SMB 服务...")
             sys.exit(0)
 
         signal.signal(signal.SIGTERM, signal_handler)
         signal.signal(signal.SIGINT, signal_handler)
+        log_queue.put("[DIAG] Step 7: 信号处理器设置完成")
 
         # [v1.45] 心跳检测: 使用 log_queue.put 直接发送，绕过所有中间层
         def heartbeat_log():
@@ -132,6 +135,7 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
                     break
         import threading
         threading.Thread(target=heartbeat_log, daemon=True).start()
+        log_queue.put("[DIAG] Step 8: 心跳线程已启动")
 
         try:
             # [v1.22] 尝试优先绑定 IPv6 (::) 以支持双栈
