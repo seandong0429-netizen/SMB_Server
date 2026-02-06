@@ -93,18 +93,8 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
         except Exception as e:
             logger.error(f"[MONITOR] 钩子注入失败: {e}")
 
-        # [v1.42] 心跳检测: 每 30 秒打印一次日志，证明日志管道是活的
-        def heartbeat_log():
-            while True:
-                time.sleep(30)
-                try:
-                    # 使用 print 测试
-                    # print(f"[HEARTBEAT] 服务运行正常 (PID: {os.getpid()})")
-                    pass 
-                except:
-                    break
-        import threading
-        threading.Thread(target=heartbeat_log, daemon=True).start()
+
+        # [v1.45] 心跳和额外监控移到下面单独处理
 
         # [v2.0] Double-check License in child process
         valid, msg, _ = license_manager.verify()
@@ -127,13 +117,17 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
             # 我们通过 sys.exit() ? 不，这会导致 finally 块执行
             sys.exit(0)
 
-        # [v1.43] 心跳检测: 开启！每 10 秒心跳，确认日志存活
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+
+        # [v1.45] 心跳检测: 使用 log_queue.put 直接发送，绕过所有中间层
         def heartbeat_log():
+            import datetime
             while True:
-                time.sleep(10)
+                time.sleep(5)  # 5秒一次心跳，方便快速验证
                 try:
-                    # 直接打印，走 stdout 重定向
-                    print(f"[HEARTBEAT] 服务进程存活检测 (PID: {os.getpid()})")
+                    timestamp = datetime.datetime.now().strftime('%H:%M:%S')
+                    log_queue.put(f"{timestamp} - [HEARTBEAT] 服务进程存活 (PID: {os.getpid()})")
                 except:
                     break
         import threading
