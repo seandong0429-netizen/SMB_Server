@@ -317,10 +317,6 @@ def fix_port_445_environment():
             # 5. 清理 NetBIOS 缓存 (解决部分占用的玄学问题)
             subprocess.run("nbtstat -R", shell=True, capture_output=True)
             subprocess.run("nbtstat -RR", shell=True, capture_output=True)
-            subprocess.run("nbtstat -RR", shell=True, capture_output=True)
-            subprocess.run("nbtstat -RR", shell=True, capture_output=True)
-            subprocess.run("nbtstat -RR", shell=True, capture_output=True)
-            subprocess.run("nbtstat -RR", shell=True, capture_output=True)
 
             # [v2.3 Fix] 强力操作: 禁用网卡上的 "File and Printer Sharing" 绑定 (ms_server)
             # 这能彻底释放 Port 139/445 而不需要禁用整个 NetBIOS
