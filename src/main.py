@@ -303,8 +303,8 @@ class MainApp:
             user = self.username.get() if self.auth_mode.get() == "secure" else None
             pwd = self.password.get() if self.auth_mode.get() == "secure" else None
             
-            # [v1.24] 保存配置 & 标记已启动
-            self.config_mgr.set("auto_start_service", True)
+            # [v1.24 Fix] 不要强制标记为自动启动，除非用户有专门的设置项（当前逻辑是用户手动点启动不应导致下次自启）
+            # self.config_mgr.set("auto_start_service", True)
             self.config_mgr.update_from_ui(path, name, port, self.auth_mode.get(), self.username.get(), self.password.get(), legacy)
             
             # 添加防火墙规则 (manage_firewall_rule 已在 utils 中配置为开启 139)
@@ -324,26 +324,43 @@ class MainApp:
             err_msg = f"启动服务时发生严重错误:\n{str(e)}\n\n{traceback.format_exc()}"
             self.logger.error(err_msg)
             messagebox.showerror("启动失败", err_msg)
+            # 确保按钮状态正确
+            self.start_btn.config(state=tk.NORMAL)
+            self.stop_btn.config(state=tk.DISABLED)
 
 
     def stop_server(self):
-        if self.service:
-            # 停止前获取端口移除防火墙规则
-            port = self.service.val_port
-            self.service.stop()
-            self.service = None
-            
-            # 移除防火墙规则
-            manage_firewall_rule('delete', port)
-            
-        # [v1.24] 标记为手动停止，避免下次自动启动
-        self.config_mgr.set("auto_start_service", False)
-        self.config_mgr.save()
-            
-        self.start_btn.config(state=tk.NORMAL)
-        self.stop_btn.config(state=tk.DISABLED)
-        self.status_label.config(text="状态: 已停止", foreground="red")
-        self.is_running = False
+        """停止服务"""
+        try:
+            # 立即给用户反馈
+            self.stop_btn.config(state=tk.DISABLED, text="停止中...")
+            self.root.update()
+
+            if self.service:
+                # 停止前获取端口移除防火墙规则
+                port = self.service.val_port
+                self.service.stop()
+                self.service = None
+                
+                # 移除防火墙规则
+                manage_firewall_rule('delete', port)
+                
+            # [v1.24] 标记为手动停止
+            self.config_mgr.set("auto_start_service", False)
+            self.config_mgr.save()
+                
+            self.status_label.config(text="状态: 已停止", foreground="red")
+            self.is_running = False
+
+        except Exception as e:
+            import traceback
+            err_msg = f"停止服务时发生错误:\n{str(e)}\n\n{traceback.format_exc()}"
+            self.logger.error(err_msg)
+            messagebox.showerror("停止失败", err_msg)
+        finally:
+            self.start_btn.config(state=tk.NORMAL)
+            self.stop_btn.config(state=tk.DISABLED, text="停止服务")
+
 
     def toggle_startup(self):
         # [v1.23] 更新逻辑以适配自定义 Toggle

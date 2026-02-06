@@ -534,7 +534,9 @@ def run_system_diagnostics():
                             if check_port == 445:
                                 report.append(f"❌ 严重错误: 端口 {check_port} 被 System (PID 4) 占用！")
                             else:
-                                report.append(f"⚠️ 注意: 端口 {check_port} 被 System (PID 4) 占用 (通常是 NetBIOS Session)。\n   如果开启兼容模式失败，可能需要禁用 NetBIOS over TCP/IP 或依赖系统本身。")
+                                report.append(f"❌ 关键冲突: 端口 {check_port} 被 System (PID 4) 占用。")
+                                report.append("   【重要】这会导致复印机无法通过计算机名访问！")
+                                report.append("   解决方案: 请在网卡属性中取消勾选【Microsoft 网络文件和打印机共享】。")
                         else:
                             report.append(f"✅ 端口 {check_port} 被 PID {pid} 占用 (正常)。")
                 if not found_listening:

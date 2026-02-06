@@ -155,9 +155,6 @@ class SMBService:
         self.logger.info(f"监听端口: {verbs_ports(ports_to_listen)}")
         self.logger.info(f"共享路径: {self.share_name} -> {self.share_path}")
 
-def verbs_ports(ports):
-    return ", ".join(str(p) for p in ports)
-
     def stop(self):
         """停止所有服务进程"""
         if not self.processes:
@@ -166,13 +163,16 @@ def verbs_ports(ports):
         self.logger.info("正在停止所有服务进程...")
         
         for proc in self.processes:
-            if proc.is_alive():
-                proc.terminate()
-                proc.join(timeout=1)
+            try:
                 if proc.is_alive():
-                    self.logger.warning(f"进程 {proc.pid} 未响应，强制 Kill...")
-                    proc.kill()
-                    proc.join(timeout=0.5)
+                    proc.terminate()
+                    proc.join(timeout=2) # 增加等待时间
+                    if proc.is_alive():
+                        self.logger.warning(f"进程 {proc.pid} 未响应，强制 Kill...")
+                        proc.kill()
+                        proc.join(timeout=1)
+            except Exception as e:
+                self.logger.error(f"停止进程时出错: {e}")
         
         self.processes = []
         self.logger.info("服务已全部停止")
@@ -188,4 +188,7 @@ def verbs_ports(ports):
         
         self.logger.error(f"端口 {preferred_port} 和 {fallback_port} 均被占用")
         return None
+
+def verbs_ports(ports):
+    return ", ".join(str(p) for p in ports)
 
