@@ -41,9 +41,27 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
     logger.addHandler(q_handler)
     logger.propagate = False
     
+    # 4. 重定向 stdout/stderr (捕捉 print 输出)
+    class StreamToLogger:
+        def __init__(self, logger, level):
+            self.logger = logger
+            self.level = level
+        def write(self, buf):
+            for line in buf.rstrip().splitlines():
+                self.logger.log(self.level, line.rstrip())
+        def flush(self):
+            pass
+
+    sys.stdout = StreamToLogger(logger, logging.INFO)
+    sys.stderr = StreamToLogger(logger, logging.ERROR)
+    
     try:
         logger.info(f"正在初始化 SMB 服务 (PID: {os.getpid()})...")
         
+        # [Self-Check] 发送一条测试日志验证 Impacket 钩子是否生效
+        test_imp = logging.getLogger('impacket')
+        test_imp.info("系统自检: Impacket 日志通道已挂载")
+
         # 延迟导入 impacket，以便捕获 ImportError
         # 在打包环境中，如果缺少 hidden import，这里会抛出异常，现在可以被 log 捕获了
         from impacket import smbserver
