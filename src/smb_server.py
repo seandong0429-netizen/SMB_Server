@@ -13,9 +13,14 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
     """在独立进程中运行 SMB 服务"""
     
     # 配置子进程日志
+    # [v1.38] 捕获所有日志 (包括 impacket 的连接日志) 到主界面
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    q_handler = QueueHandler(log_queue)
+    root_logger.addHandler(q_handler)
+    
+    # 专门获取 SMBServer 用于我们自己的打印
     logger = logging.getLogger('SMBServer')
-    logger.setLevel(logging.INFO)
-    logger.addHandler(QueueHandler(log_queue))
     
     try:
         logger.info(f"正在初始化 SMB 服务 (PID: {os.getpid()})...")
