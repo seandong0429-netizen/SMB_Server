@@ -252,6 +252,12 @@ def fix_port_445_environment():
         # 追加记录
         commands.append(f'powershell -Command "Add-Content -Path \'C:\\Windows\\System32\\drivers\\etc\\hosts\' -Value \"127.0.0.1 $env:COMPUTERNAME\" -Force"')
 
+        # [v2.3 Fix] 强力操作: 禁用网卡上的 "File and Printer Sharing" 绑定 (ms_server)
+        # 这必须在提权的 CMD 串中执行，否则普通用户点击无效
+        ps_unbind_cmd = 'Get-NetAdapter | Disable-NetAdapterBinding -ComponentID ms_server -PassThru'
+        # 注意转义双引号
+        commands.append(f'powershell -Command "{ps_unbind_cmd}"')
+
         # commands.append(f'echo.>>"{hosts_f}"') # 确保新行
         # commands.append(f'echo 127.0.0.1 {hn} # Auto-added>>"{hosts_f}"')
 
