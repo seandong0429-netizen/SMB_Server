@@ -152,7 +152,12 @@ class MainApp:
         legacy_frame = ttk.LabelFrame(main_frame, text="高级兼容性设置", padding=10)
         legacy_frame.pack(fill=tk.X, pady=(0, 10))
         
-        ttk.Checkbutton(legacy_frame, text="开启兼容模式 (Port 139 + NetBIOS)", variable=self.legacy_mode_var).pack(side=tk.LEFT, padx=5)
+        # [v1.36] 兼容模式 Checkbox (使用 Label 模拟以实现绿色对勾)
+        self.legacy_lbl = ttk.Label(legacy_frame, text="", cursor="hand2")
+        self.legacy_lbl.pack(side=tk.LEFT, padx=5)
+        self.legacy_lbl.bind("<Button-1>", lambda e: self.toggle_legacy())
+        self.update_legacy_ui()
+
         ttk.Label(legacy_frame, text="(适用于复印机/旧版 Windows)", font=('Microsoft YaHei UI', 8), foreground='#666666').pack(side=tk.LEFT, padx=5)
 
         # 3. 控制与状态
@@ -384,6 +389,19 @@ class MainApp:
             self.startup_lbl.config(text="✅ 开机自动启动", foreground="green")
         else:
             self.startup_lbl.config(text="⬜ 开机自动启动", foreground="#666666")
+
+    def toggle_legacy(self):
+        """[v1.36] 切换兼容模式状态"""
+        current = self.legacy_mode_var.get()
+        self.legacy_mode_var.set(not current)
+        self.update_legacy_ui()
+
+    def update_legacy_ui(self):
+        """[v1.36] 更新兼容模式 UI"""
+        if self.legacy_mode_var.get():
+            self.legacy_lbl.config(text="✅ 开启兼容模式 (Port 139 + NetBIOS)", foreground="green")
+        else:
+            self.legacy_lbl.config(text="⬜ 开启兼容模式 (Port 139 + NetBIOS)", foreground="#666666")
 
     def check_log_queue(self):
         """定期把队列里的日志取出来显示在界面上"""
