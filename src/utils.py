@@ -560,6 +560,45 @@ def run_system_diagnostics():
                  report.append(f"⚠️ NetBIOS 节点类型: {node_type} (建议: Broadcast=1)")
         except Exception:
              report.append("⚠️ NetBIOS 节点类型: 未设置或无法读取 (默认可能是 Hybrid)")
+
+        # [v2.5] 深度诊断: 扫描所有网卡接口的 NetBIOS 状态
+        try:
+            netbt_interfaces_path = r"SYSTEM\CurrentControlSet\Services\Netbt\Parameters\Interfaces"
+            key_interfaces = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, netbt_interfaces_path, 0, winreg.KEY_READ)
+            num_subkeys = winreg.QueryInfoKey(key_interfaces)[0]
+            
+            report.append(f"\n[NetBIOS 接口检查]")
+            found_active_netbt = False
+            
+            for i in range(num_subkeys):
+                subkey_name = winreg.EnumKey(key_interfaces, i)
+                full_subkey_path = f"{netbt_interfaces_path}\\{subkey_name}"
+                try:
+                    key_sub = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, full_subkey_path, 0, winreg.KEY_READ)
+                    try:
+                         # 0=Default(Enable if Static IP or DHCP), 1=Enable, 2=Disable
+                         opt, _ = winreg.QueryValueEx(key_sub, "NetbiosOptions")
+                         
+                         if opt != 2: # 发现未禁用的
+                             found_active_netbt = True
+                             report.append(f"⚠️ 发现潜在元凶: 接口 {{{subkey_name}}}")
+                             report.append(f"   NetbiosOptions = {opt} (未彻底禁用)")
+                             
+                    except FileNotFoundError:
+                        # 默认值通常意味着启用(如果IP是静态的)或由DHCP决定。通常视为潜在风险。
+                        # report.append(f"ℹ️ 接口 {subkey_name} 使用默认 NetBIOS 设置 (可能有风险)")
+                        pass
+                    winreg.CloseKey(key_sub)
+                except Exception:
+                    pass
+            
+            if not found_active_netbt:
+                 report.append("✅ 所有注册表接口均已显式禁用 NetBIOS (Option=2)。")
+            else:
+                 report.append("❌ 发现有一个或多个接口开启了 NetBIOS！这可能是 PID 4 占用的原因。")
+                 
+        except Exception as e:
+            report.append(f"接口扫描失败: {e}")
             
     except Exception as e:
         report.append(f"主机名检查出错: {e}")
@@ -583,6 +622,8 @@ def run_system_diagnostics():
                         if pid == "4":
                             if check_port == 445:
                                 report.append(f"❌ 严重错误: 端口 {check_port} 被 System (PID 4) 占用！")
+                                report.append("   这意味着某个隐藏网卡仍在运行 NetBIOS。")
+                                report.append("   【手动查询命令】请在 CMD 运行: wmic nicconfig get Description,TcpipNetbiosOptions")
                             else:
                                 report.append(f"❌ 关键冲突: 端口 {check_port} 被 System (PID 4) 占用。")
                                 report.append("   【重要】这会导致复印机无法通过计算机名访问！")
