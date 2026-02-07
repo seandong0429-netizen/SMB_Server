@@ -271,6 +271,8 @@ class SMBService:
                 )
                 ipv6_proc.start()
                 self.processes.append(ipv6_proc)
+            elif p == self.val_port and not ipv6:
+                self.logger.warning(f"未检测到 IPv6 地址，跳过 IPv6 服务")
             
             # [v1.35] 如果启用了兼容模式 (legacy_mode)，我们除了监听端口 139，
             # 还需要启动 NBNS 服务 (UDP 137) 来替代被禁用的 Windows NetBT 服务

@@ -82,21 +82,42 @@ def get_local_ip():
         return '127.0.0.1'
 
 def get_local_ipv6():
-    """[v1.53] 获取本机 Link-Local IPv6 地址"""
+    """[v1.55] 获取本机 Link-Local IPv6 地址 (改进版)"""
+    import socket
+    import platform
+    
+    # 方法1: 使用 socket.getaddrinfo
     try:
-        import socket
-        # 获取所有网络接口的地址信息
         for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET6):
             addr = info[4][0]
-            # 只返回 Link-Local 地址 (fe80:: 开头)
             if addr.startswith('fe80'):
-                # 移除可能的 scope id (如 %4)
                 if '%' in addr:
                     addr = addr.split('%')[0]
                 return addr
-        return None
     except Exception:
-        return None
+        pass
+    
+    # 方法2: Windows 环境使用 ipconfig 命令
+    if platform.system() == 'Windows':
+        try:
+            import subprocess
+            result = subprocess.run(['ipconfig'], capture_output=True, text=True, encoding='gbk', errors='ignore')
+            lines = result.stdout.split('\n')
+            for line in lines:
+                if 'fe80::' in line.lower():
+                    # 提取 IPv6 地址
+                    import re
+                    match = re.search(r'fe80::[a-fA-F0-9:]+', line)
+                    if match:
+                        addr = match.group(0)
+                        # 移除 scope id
+                        if '%' in addr:
+                            addr = addr.split('%')[0]
+                        return addr
+        except Exception:
+            pass
+    
+    return None
 
 def get_hostname():
     """获取本机计算机名"""
