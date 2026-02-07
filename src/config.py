@@ -29,7 +29,8 @@ class ConfigManager:
             "username": "admin",
             "password": "",
             "auto_start_service": False,
-            "legacy_mode": False
+            "legacy_mode": False,
+            "log_retention_days": 7  # [v1.58] 日志保留天数
         }
 
     def load(self):

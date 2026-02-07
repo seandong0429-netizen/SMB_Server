@@ -18,6 +18,7 @@ from src.logger import setup_logger
 from src.smb_server import SMBService
 from src.version import VERSION
 from src.config import ConfigManager
+from src.log_utils import cleanup_old_logs, get_log_info
 
 
 class MainApp:
@@ -56,6 +57,15 @@ class MainApp:
         
         self.create_widgets()
         self.check_log_queue()
+
+        # [v1.58] 启动时清理旧日志
+        retention_days = cfg.get("log_retention_days", 7)
+        try:
+            deleted, freed = cleanup_old_logs(retention_days)
+            if deleted > 0:
+                self.logger.info(f"已清理 {deleted} 个旧日志文件，释放 {freed / 1024:.1f} KB 空间")
+        except Exception as e:
+            self.logger.error(f"日志清理失败: {e}")
 
         # [v1.24] 检查是否需要自动启动服务
         # 延时检测，等待UI渲染完毕
@@ -147,6 +157,8 @@ class MainApp:
         ttk.Button(port_frame, text="一键修复环境 (推荐)", command=self.fix_environment_445).pack(side=tk.LEFT, padx=10)
         # [v1.16] 诊断按钮
         ttk.Button(port_frame, text="环境诊断", command=self.show_diagnostics).pack(side=tk.LEFT, padx=0)
+        # [v1.58] 清理日志按钮
+        ttk.Button(port_frame, text="清理日志", command=self.cleanup_logs).pack(side=tk.LEFT, padx=5)
 
         # [v2.2] 兼容模式 Checkbox (Advanced Settings)
         legacy_frame = ttk.LabelFrame(main_frame, text="高级兼容性设置", padding=10)
@@ -278,6 +290,33 @@ class MainApp:
         text_area.config(state=tk.DISABLED) # 只读
         
         ttk.Label(diag_win, text="请截图此报告发给开发者以排查问题", foreground="blue").pack(pady=5)
+
+    def cleanup_logs(self):
+        """[v1.58] 手动清理日志文件"""
+        try:
+            # 获取日志信息
+            log_info = get_log_info()
+            
+            if not log_info["exists"]:
+                messagebox.showinfo("日志清理", "当前没有日志文件需要清理。")
+                return
+            
+            # 询问用户确认
+            size_mb = log_info.get("size_mb", 0)
+            msg = f"当前日志文件大小: {size_mb:.2f} MB\n\n是否要清理此日志文件？"
+            
+            if messagebox.askyesno("确认清理", msg):
+                retention_days = self.config_mgr.get("log_retention_days", 7)
+                deleted, freed = cleanup_old_logs(retention_days=0)  # 强制清理
+                
+                if deleted > 0 or freed > 0:
+                    messagebox.showinfo("清理完成", f"已释放 {freed / 1024:.1f} KB 空间")
+                    self.logger.info(f"手动清理日志: 释放 {freed / 1024:.1f} KB")
+                else:
+                    messagebox.showinfo("清理完成", "日志已刷新")
+        except Exception as e:
+            messagebox.showerror("清理失败", f"清理日志时出错: {e}")
+            self.logger.error(f"清理日志失败: {e}")
 
     def start_server(self):
         try:
