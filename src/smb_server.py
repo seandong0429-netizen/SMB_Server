@@ -9,8 +9,8 @@ from src.logger import QueueHandler
 from src.nbns_server import run_nbns_server
 
 # 独立的进程函数，避免 Pickling 问题
-def run_smb_server_process(share_name, share_path, username, password, port, log_queue):
-    """在独立进程中运行 SMB 服务"""
+def run_smb_server_process(share_name, share_path, username, password, port, log_queue, listen_address='0.0.0.0'):
+    """[v1.54] 在独立进程中运行 SMB 服务，支持指定监听地址"""
     
     # 配置子进程日志
     # [v1.39] 全局日志钩子: 强行捕获 Impacket 的所有输出
@@ -144,13 +144,14 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
         log_queue.put("[DIAG] Step 6: 心跳线程已启动")
         debug_write("[INIT] 心跳线程已启动")
 
+        # [v1.54] 使用传入的监听地址
         try:
-            # [v1.22] 尝试优先绑定 IPv6 (::) 以支持双栈
-            server = smbserver.SimpleSMBServer(listenAddress='::', listenPort=port)
-            logger.info("已绑定 IPv6 双栈接口 (::)")
+            server = smbserver.SimpleSMBServer(listenAddress=listen_address, listenPort=port)
+            addr_type = "IPv6" if ':' in listen_address else "IPv4"
+            logger.info(f"已绑定 {addr_type} 接口 ({listen_address})")
         except Exception as e:
-            logger.warning(f"绑定 IPv6 失败 ({e})，回退到 IPv4 (0.0.0.0)")
-            server = smbserver.SimpleSMBServer(listenAddress='0.0.0.0', listenPort=port)
+            logger.error(f"绑定 {listen_address} 失败: {e}")
+            return
             
         # [v1.44] 实例级 Monkey Patch: 针对内部的真实 TCPServer 对象
         # SimpleSMBServer 只是 facade，真正的 TCP Server 是 _SMBServer__server
@@ -246,18 +247,30 @@ class SMBService:
 
         local_ip = get_local_ip()
         hostname = get_hostname()
+        ipv6 = get_local_ipv6()
 
         for p in ports_to_listen:
             self.logger.info(f"正在启动服务进程 (端口 {p})...")
             
-            # 使用 multiprocessing 启动
+            # 使用 multiprocessing 启动 IPv4 服务
             proc = multiprocessing.Process(
                 target=run_smb_server_process,
-                args=(self.share_name, self.share_path, self.username, self.password, p, self.log_queue),
+                args=(self.share_name, self.share_path, self.username, self.password, p, self.log_queue, '0.0.0.0'),
                 daemon=True
             )
             proc.start()
             self.processes.append(proc)
+            
+            # [v1.54] 如果有 IPv6 地址，启动额外的 IPv6 服务进程
+            if ipv6 and p == self.val_port:
+                self.logger.info(f"正在启动 IPv6 服务进程 (端口 {p})...")
+                ipv6_proc = multiprocessing.Process(
+                    target=run_smb_server_process,
+                    args=(self.share_name, self.share_path, self.username, self.password, p, self.log_queue, '::'),
+                    daemon=True
+                )
+                ipv6_proc.start()
+                self.processes.append(ipv6_proc)
             
             # [v1.35] 如果启用了兼容模式 (legacy_mode)，我们除了监听端口 139，
             # 还需要启动 NBNS 服务 (UDP 137) 来替代被禁用的 Windows NetBT 服务
