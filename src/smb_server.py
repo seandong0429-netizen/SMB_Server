@@ -144,8 +144,15 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
         log_queue.put("[DIAG] Step 6: 心跳线程已启动")
         debug_write("[INIT] 心跳线程已启动")
 
-        # [v1.54] 使用传入的监听地址
+        # [v1.56] 使用传入的监听地址
+        # 如果是 IPv6 地址，强制 TCPServer 使用 AF_INET6
         try:
+            if ':' in listen_address:
+                import socketserver
+                import socket
+                socketserver.TCPServer.address_family = socket.AF_INET6
+                log_queue.put("[IPv6] 强制启用 AF_INET6 地址族")
+            
             server = smbserver.SimpleSMBServer(listenAddress=listen_address, listenPort=port)
             addr_type = "IPv6" if ':' in listen_address else "IPv4"
             logger.info(f"已绑定 {addr_type} 接口 ({listen_address})")
@@ -302,12 +309,21 @@ class SMBService:
         self.logger.info(f"🌐 可用访问方式:")
         self.logger.info(f"   \\\\{local_ip}\\{self.share_name} (IPv4)")
         
-        # [v1.53] 显示 IPv6 访问方式
+        # [v1.56] 显示 IPv6 访问方式（处理 scope ID）
         ipv6 = get_local_ipv6()
         if ipv6:
             # Windows UNC 路径中 IPv6 需要特殊格式
-            ipv6_unc = ipv6.replace(':', '-') + ".ipv6-literal.net"
-            self.logger.info(f"   \\\\{ipv6_unc}\\{self.share_name} (IPv6)")
+            # 处理带 scope ID 的地址（如 fe80::xxx%4）
+            if '%' in ipv6:
+                # 提取地址和 scope ID
+                addr, scope = ipv6.split('%')
+                # 格式：fe80--xxx-s4.ipv6-literal.net (s 后面跟 scope ID)
+                ipv6_unc = addr.replace(':', '-') + f"-s{scope}.ipv6-literal.net"
+            else:
+                ipv6_unc = ipv6.replace(':', '-') + ".ipv6-literal.net"
+            self.logger.info(f"   \\\\{ipv6_unc}\\{self.share_name} (IPv6 Link-Local)")
+            # 也显示直接地址格式供参考
+            self.logger.info(f"   \\\\\\\\[{ipv6}]\\\\{self.share_name} (IPv6 直接格式)")
         
         self.logger.info(f"   \\\\{hostname}\\{self.share_name} (计算机名)")
         self.logger.info(f"═══════════════════════════════════════")

@@ -82,17 +82,16 @@ def get_local_ip():
         return '127.0.0.1'
 
 def get_local_ipv6():
-    """[v1.55] 获取本机 Link-Local IPv6 地址 (改进版)"""
+    """[v1.56] 获取本机 Link-Local IPv6 地址（保留 Scope ID）"""
     import socket
     import platform
     
-    # 方法1: 使用 socket.getaddrinfo
+    # 方法1: 使用 socket.getaddrinfo（保留完整地址包括 scope ID）
     try:
         for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET6):
             addr = info[4][0]
             if addr.startswith('fe80'):
-                if '%' in addr:
-                    addr = addr.split('%')[0]
+                # [v1.56] 保留 scope ID (例如 %4)，这对 link-local 地址是必需的
                 return addr
     except Exception:
         pass
@@ -105,15 +104,12 @@ def get_local_ipv6():
             lines = result.stdout.split('\n')
             for line in lines:
                 if 'fe80::' in line.lower():
-                    # 提取 IPv6 地址
+                    # 提取 IPv6 地址（包括可能的 scope ID）
                     import re
-                    match = re.search(r'fe80::[a-fA-F0-9:]+', line)
+                    # 改进的正则表达式，支持 scope ID
+                    match = re.search(r'fe80::[a-fA-F0-9:]+(%\d+)?', line)
                     if match:
-                        addr = match.group(0)
-                        # 移除 scope id
-                        if '%' in addr:
-                            addr = addr.split('%')[0]
-                        return addr
+                        return match.group(0)
         except Exception:
             pass
     
