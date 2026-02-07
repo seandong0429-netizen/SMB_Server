@@ -4,7 +4,7 @@ import logging
 import time
 import sys
 import os
-from src.utils import get_local_ip, get_hostname
+from src.utils import get_local_ip, get_local_ipv6, get_hostname
 from src.logger import QueueHandler
 from src.nbns_server import run_nbns_server
 
@@ -279,9 +279,23 @@ class SMBService:
                 # 不阻断其他端口尝试
 
         self.logger.info(f"服务启动尝试完成")
-        self.logger.info(f"主机名: {hostname}")
-        self.logger.info(f"监听端口: {verbs_ports(ports_to_listen)}")
-        self.logger.info(f"共享路径: {self.share_name} -> {self.share_path}")
+        self.logger.info(f"═══════════════════════════════════════")
+        self.logger.info(f"📁 共享名称: {self.share_name}")
+        self.logger.info(f"📂 共享路径: {self.share_path}")
+        self.logger.info(f"🔌 监听端口: {verbs_ports(ports_to_listen)}")
+        self.logger.info(f"═══════════════════════════════════════")
+        self.logger.info(f"🌐 可用访问方式:")
+        self.logger.info(f"   \\\\{local_ip}\\{self.share_name} (IPv4)")
+        
+        # [v1.53] 显示 IPv6 访问方式
+        ipv6 = get_local_ipv6()
+        if ipv6:
+            # Windows UNC 路径中 IPv6 需要特殊格式
+            ipv6_unc = ipv6.replace(':', '-') + ".ipv6-literal.net"
+            self.logger.info(f"   \\\\{ipv6_unc}\\{self.share_name} (IPv6)")
+        
+        self.logger.info(f"   \\\\{hostname}\\{self.share_name} (计算机名)")
+        self.logger.info(f"═══════════════════════════════════════")
 
     def stop(self):
         """停止所有服务进程"""

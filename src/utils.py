@@ -81,6 +81,23 @@ def get_local_ip():
     except Exception:
         return '127.0.0.1'
 
+def get_local_ipv6():
+    """[v1.53] 获取本机 Link-Local IPv6 地址"""
+    try:
+        import socket
+        # 获取所有网络接口的地址信息
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET6):
+            addr = info[4][0]
+            # 只返回 Link-Local 地址 (fe80:: 开头)
+            if addr.startswith('fe80'):
+                # 移除可能的 scope id (如 %4)
+                if '%' in addr:
+                    addr = addr.split('%')[0]
+                return addr
+        return None
+    except Exception:
+        return None
+
 def get_hostname():
     """获取本机计算机名"""
     return socket.gethostname()
