@@ -75,19 +75,20 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
         import signal
         log_queue.put("[DIAG] Step 3: 各模块导入成功")
         
-        # [v1.48] Monkey Patch: 改回 print() 因为 v1.44 证明它工作
+        # [v1.49] Monkey Patch: 使用 logging 而不是 print，因为 logging 是线程安全的
+        # root_logger 已经配置了 QueueHandler
         try:
             # Hook 1: verify_request (连接建立前)
             original_verify_request = smbserver.SMBSERVER.verify_request
             def my_verify_request(self, request, client_address):
-                print(f"[CONN] 连接请求: {client_address}")
+                logging.getLogger().info(f"[CONN] 连接请求: {client_address}")
                 return original_verify_request(self, request, client_address)
             smbserver.SMBSERVER.verify_request = my_verify_request
             
             # Hook 2: process_request (处理请求)
             original_process_request = smbserver.SMBSERVER.process_request
             def my_process_request(self, request, client_address):
-                print(f"[PROC] 处理请求: {client_address}")
+                logging.getLogger().info(f"[PROC] 处理请求: {client_address}")
                 return original_process_request(self, request, client_address)
             smbserver.SMBSERVER.process_request = my_process_request
 
@@ -110,13 +111,13 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
         signal.signal(signal.SIGINT, signal_handler)
         log_queue.put("[DIAG] Step 5: 信号处理器设置完成")
 
-        # [v1.48] 心跳检测: 使用 print() 走 stdout 重定向，避免闭包问题
+        # [v1.49] 心跳检测: 使用 logging 而不是 print
         def heartbeat_log():
             import datetime
             while True:
                 time.sleep(5)
                 try:
-                    print(f"[HEARTBEAT] 服务进程存活 (PID: {os.getpid()})")
+                    logging.getLogger().info(f"[HEARTBEAT] 服务进程存活 (PID: {os.getpid()})")
                 except:
                     break
         import threading
