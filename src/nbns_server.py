@@ -1,6 +1,7 @@
 import socket
 import struct
 import logging
+import logging.handlers  # [v1.51] 修复: 必须显式导入
 import time
 import multiprocessing
 from src.utils import get_local_ip, get_hostname
@@ -100,8 +101,8 @@ def run_nbns_server(log_queue):
                 # 调试日志: 记录收到的所有请求
                 logger.debug(f"NBNS Query: {query_pure_name}<{suffix:02x}> from {addr[0]}")
                 
-                # 简单匹配: 忽略后缀，只要名字对就行 (00=Workstation, 20=Server)
-                if query_pure_name == hostname:
+                # [v1.51] 忽略大小写比较，增强兼容性
+                if query_pure_name.upper() == hostname:
                     logger.info(f"收到解析请求: {query_pure_name}<{suffix:02x}> 来自 {addr[0]} -> 响应 {local_ip}")
                     
                     # Construct Response
