@@ -187,10 +187,16 @@ def run_smb_server_process(share_name, share_path, username, password, port, log
 
         logger.info("SMB 服务准备就绪，开始监听...")
         
-        # [v1.44] 在 start 之前对内部 TCPServer 挂载监控钩子
-        # SimpleSMBServer 用 name mangling 隐藏了 __server，我们用 _SMBServer__server 访问
+        # [v1.57] 在 start 之前对内部 TCPServer 挂载监控钩子
+        # SimpleSMBServer 用 name mangling 隐藏了 __server
+        # 尝试两种可能的混淆名称
         try:
-            internal_server = server._SMBServer__server
+            internal_server = getattr(server, '_SimpleSMBServer__server', 
+                                    getattr(server, '_SMBServer__server', None))
+            
+            if internal_server is None:
+                raise AttributeError("无法访问内部 TCPServer 对象")
+                
             print(f"[INIT] 找到内部 TCPServer: {type(internal_server)}")
             
             # 保存原方法

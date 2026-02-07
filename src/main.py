@@ -13,7 +13,7 @@ import pystray
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 
-from src.utils import get_local_ip, get_hostname, is_port_in_use, set_windows_startup, check_windows_startup, stop_windows_server_service, fix_port_445_environment, manage_firewall_rule, run_system_diagnostics, open_hosts_file
+from src.utils import get_local_ip, get_local_ipv6, get_hostname, is_port_in_use, set_windows_startup, check_windows_startup, stop_windows_server_service, fix_port_445_environment, manage_firewall_rule, run_system_diagnostics, open_hosts_file
 from src.logger import setup_logger
 from src.smb_server import SMBService
 from src.version import VERSION
@@ -187,10 +187,24 @@ class MainApp:
         # 底部提示 (优先 Pack 底部，防止被日志挤出)
         local_ip = get_local_ip()
         hostname = get_hostname()
+        ipv6 = get_local_ipv6()
         
         footer_frame = ttk.Frame(main_frame)
         footer_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=5)
-        ttk.Label(footer_frame, text=f"访问地址: \\\\{local_ip}   (或 \\\\{hostname})", 
+        
+        # [v1.57] 显示所有可用访问方式
+        access_methods = [f"\\\\{local_ip}", f"\\\\{hostname}"]
+        if ipv6:
+            # 格式化 IPv6 地址用于显示
+            if '%' in ipv6:
+                addr, scope = ipv6.split('%')
+                ipv6_display = addr.replace(':', '-') + f"-s{scope}.ipv6-literal.net"
+            else:
+                ipv6_display = ipv6.replace(':', '-') + ".ipv6-literal.net"
+            access_methods.insert(1, f"\\\\{ipv6_display}")
+        
+        access_text = "访问地址: " + "  或  ".join(access_methods)
+        ttk.Label(footer_frame, text=access_text, 
                  font=('Microsoft YaHei UI', 10, 'bold'), foreground="#0056b3").pack()
 
         # 4. 日志窗口
