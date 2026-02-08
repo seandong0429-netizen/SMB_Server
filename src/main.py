@@ -6,7 +6,7 @@ import threading
 import multiprocessing
 import os
 import sys
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageTk
 import pystray
 
 # Ensure src is in path if running from root
@@ -29,6 +29,15 @@ class MainApp:
         
         self.root.title(f"云铠智能办公 SMB 服务端 v{VERSION}")
         self.root.geometry("750x750")
+
+        # [NEW] 设置窗口图标
+        try:
+            icon_path = os.path.join(os.path.dirname(__file__), 'assets', 'app_icon.png')
+            if os.path.exists(icon_path):
+                icon_img = ImageTk.PhotoImage(file=icon_path)
+                self.root.iconphoto(True, icon_img)
+        except Exception as e:
+            print(f"Failed to load icon: {e}")
         
         # [v1.26] 拦截关闭事件 -> 最小化到托盘
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -106,6 +115,15 @@ class MainApp:
         # 主容器
         main_frame = ttk.Frame(self.root, padding="20")
         main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # [NEW] 顶部工具栏 (Help 按钮)
+        top_bar = ttk.Frame(main_frame)
+        top_bar.pack(fill=tk.X, pady=(0, 10))
+        
+        # 使用 pack(side=RIGHT) 让它靠右，或 LEFT 靠左。用户说 "最顶端添加一个帮助按钮"
+        # 通常帮助按钮在右上角或菜单栏。这里放右上角。
+        ttk.Button(top_bar, text="帮助 / 关于", command=self.show_help, width=10).pack(side=tk.RIGHT)
+        ttk.Label(top_bar, text=" ", width=2).pack(side=tk.RIGHT) # Spacer
 
         # 1. 文件夹设置
         self.create_section_header(main_frame, "1. 共享目录设置")
@@ -471,7 +489,15 @@ class MainApp:
 
     # [v1.26] 系统托盘逻辑
     def create_tray_image(self):
-        # 生成一个简单的绿色图标
+        # 优先使用 app_icon.png
+        try:
+            icon_path = os.path.join(os.path.dirname(__file__), 'assets', 'app_icon.png')
+            if os.path.exists(icon_path):
+                return Image.open(icon_path)
+        except:
+            pass
+
+        # Fallback: 生成一个简单的绿色图标
         width = 64
         height = 64
         color1 = (0, 128, 0)
@@ -527,6 +553,66 @@ class MainApp:
         
         self.root.quit()
         sys.exit(0)
+
+    # [NEW] 帮助/关于弹窗
+    def show_help(self):
+        about_win = tk.Toplevel(self.root)
+        about_win.title("关于 / About")
+        about_win.geometry("400x550")
+        about_win.resizable(False, False)
+        
+        # 居中显示
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - 200
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - 275
+        about_win.geometry(f"+{x}+{y}")
+        
+        main_pad = ttk.Frame(about_win, padding="20")
+        main_pad.pack(fill=tk.BOTH, expand=True)
+
+        # 标题 (使用 smb_server 图标或者 just text)
+        ttk.Label(main_pad, text="云铠智能办公 SMB 服务端", font=('Microsoft YaHei UI', 14, 'bold')).pack(pady=(10, 5))
+        ttk.Label(main_pad, text=f"v{VERSION}", font=('Microsoft YaHei UI', 10), foreground="#666").pack(pady=(0, 20))
+        
+        # 作者信息
+        info_frame = ttk.Labelframe(main_pad, text="开发者信息", padding=15)
+        info_frame.pack(fill=tk.X, pady=10)
+        
+        ttk.Label(info_frame, text="作者: Sean", font=('Microsoft YaHei UI', 11)).pack(anchor=tk.W, pady=2)
+        
+        link_lbl = ttk.Label(info_frame, text="邮箱: fishis@126.com", font=('Microsoft YaHei UI', 11, 'underline'), foreground="blue", cursor="hand2")
+        link_lbl.pack(anchor=tk.W, pady=2)
+        
+        def send_email(e):
+            import webbrowser
+            webbrowser.open("mailto:fishis@126.com")
+        link_lbl.bind("<Button-1>", send_email)
+        
+        # 二维码
+        qr_path = os.path.join(os.path.dirname(__file__), '..', 'wechat_qr.png')
+        if os.path.exists(qr_path):
+            try:
+                # Load and resize
+                pil_img = Image.open(qr_path)
+                # Max width 300
+                w, h = pil_img.size
+                scale = 300 / float(w)
+                new_h = int(h * scale)
+                pil_img = pil_img.resize((300, new_h), Image.Resampling.LANCZOS)
+                
+                tk_img = ImageTk.PhotoImage(pil_img)
+                
+                img_lbl = ttk.Label(main_pad, image=tk_img)
+                img_lbl.image = tk_img # Keep reference
+                img_lbl.pack(pady=20)
+                
+                ttk.Label(main_pad, text="扫描二维码联系作者", font=('Microsoft YaHei UI', 9), foreground="#888").pack()
+            except Exception as e:
+                ttk.Label(main_pad, text=f"无法加载二维码: {e}", foreground="red").pack(pady=20)
+        else:
+             ttk.Label(main_pad, text="[二维码图片未找到]", foreground="#888").pack(pady=20)
+
+        # 关闭按钮
+        ttk.Button(main_pad, text="关闭", command=about_win.destroy).pack(side=tk.BOTTOM, pady=10)
 
 if __name__ == "__main__":
     multiprocessing.freeze_support() # [v1.7] 必须放在这里
