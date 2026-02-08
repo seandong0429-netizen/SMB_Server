@@ -27,7 +27,7 @@ class MainApp:
         
 
         
-        self.root.title(f"云铠智能办公 SMB 服务端 v{VERSION}")
+        self.root.title(f"科恒办公 SMB 服务端 v{VERSION}")
         self.root.geometry("750x750")
 
         # [NEW] 设置窗口图标
@@ -570,7 +570,7 @@ class MainApp:
         main_pad.pack(fill=tk.BOTH, expand=True)
 
         # 标题 (使用 smb_server 图标或者 just text)
-        ttk.Label(main_pad, text="云铠智能办公 SMB 服务端", font=('Microsoft YaHei UI', 14, 'bold')).pack(pady=(10, 5))
+        ttk.Label(main_pad, text="科恒办公 SMB 服务端", font=('Microsoft YaHei UI', 14, 'bold')).pack(pady=(10, 5))
         ttk.Label(main_pad, text=f"v{VERSION}", font=('Microsoft YaHei UI', 10), foreground="#666").pack(pady=(0, 20))
         
         # 作者信息
