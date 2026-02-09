@@ -214,6 +214,43 @@ class MainApp:
         self.startup_lbl.bind("<Button-1>", lambda e: self.toggle_startup())
         self.update_startup_ui()
 
+        # [NEW] 快捷访问链接 (中间区域)
+        local_ip = get_local_ip()
+        hostname = get_hostname()
+        
+        links_frame = ttk.Frame(control_frame)
+        links_frame.pack(side=tk.LEFT, padx=20)
+        
+        # 辅助函数：复制并提示
+        def copy_link(text, label_widget):
+            self.root.clipboard_clear()
+            self.root.clipboard_append(text)
+            self.root.update() # 必须调用 update 才能生效
+            # 无论当前显示什么，都将在1秒后恢复为原始链接文本(text)
+            label_widget.config(text="已复制!", foreground="green")
+            self.root.after(1000, lambda: label_widget.config(text=text, foreground="blue"))
+
+        # 链接样式
+        link_style = {"foreground": "blue", "cursor": "hand2", "font": ('Consolas', 9, 'underline')}
+        
+        # Link 1: IP UNC
+        l1_text = f"\\\\{local_ip}"
+        l1 = ttk.Label(links_frame, text=l1_text, **link_style)
+        l1.pack(anchor=tk.W)
+        l1.bind("<Button-1>", lambda e, t=l1_text, w=l1: copy_link(t, w))
+        
+        # Link 2: Hostname UNC
+        l2_text = f"\\\\{hostname}"
+        l2 = ttk.Label(links_frame, text=l2_text, **link_style)
+        l2.pack(anchor=tk.W)
+        l2.bind("<Button-1>", lambda e, t=l2_text, w=l2: copy_link(t, w))
+        
+        # Link 3: SMB URI
+        l3_text = f"smb://{local_ip}"
+        l3 = ttk.Label(links_frame, text=l3_text, **link_style)
+        l3.pack(anchor=tk.W)
+        l3.bind("<Button-1>", lambda e, t=l3_text, w=l3: copy_link(t, w))
+
         # 底部提示 (优先 Pack 底部，防止被日志挤出)
         local_ip = get_local_ip()
         hostname = get_hostname()
